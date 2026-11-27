@@ -95,6 +95,14 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "GET /samples/geologic_lookup renders graceful fallback when no cached unit covers coordinates" do
+    stub_request(:get, "https://macrostrat.org/api/v2/geologic_units/map")
+      .with(query: hash_including("lat" => "10.0", "lng" => "-150.0", "format" => "geojson"))
+      .to_return(
+        status: 200,
+        body: { type: "FeatureCollection", features: [] }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+
     get geologic_lookup_samples_path(lat: 10.0, lng: -150.0)
 
     assert_response :success
