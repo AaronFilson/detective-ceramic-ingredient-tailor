@@ -1,0 +1,51 @@
+LAB_ID,LATITUDE,LONGITUDE,ROCK_TYPE,LOCALITY,FORMATION,SIO2,AL2O3,FE2O3,CAO,MGO,NA2O,K2O,TIO2,P2O5,MNO,LOI
+USGS-PNW-001,47.2740,-122.4680,glacial_clay,Tacoma Commencement Bay WA,Vashon Drift,58.40,17.20,6.45,3.10,2.65,2.45,2.30,0.82,0.18,0.11,6.34
+USGS-PNW-002,47.1854,-122.2929,alluvial_clay,Puyallup Valley WA,Holocene Alluvium,59.80,16.50,5.90,2.85,2.20,2.60,2.15,0.78,0.22,0.10,6.90
+USGS-PNW-003,47.3293,-122.5801,glacial_clay,Gig Harbor Peninsula WA,Vashon Glacial Till,60.15,16.80,6.10,3.25,2.50,2.55,2.05,0.85,0.16,0.12,5.47
+USGS-PNW-004,47.3223,-122.4126,glacial_clay,Dash Point Federal Way WA,Lawton Clay Member,57.60,18.10,6.85,2.95,2.80,2.20,2.45,0.88,0.19,0.13,5.85
+USGS-PNW-005,47.3073,-122.2285,alluvial_clay,Auburn Green River WA,Green River Alluvium,61.20,16.10,5.40,2.70,1.95,2.50,2.25,0.74,0.20,0.09,6.87
+USGS-PNW-006,47.3809,-122.2348,alluvial_clay,Kent Valley WA,White River Alluvium,58.90,17.05,6.15,2.90,2.15,2.40,2.10,0.80,0.24,0.11,7.20
+USGS-PNW-007,47.3850,-122.3450,glacial_clay,Des Moines Bluff WA,Pre-Vashon Glacial Clay,59.30,17.40,6.30,3.15,2.60,2.35,2.20,0.84,0.17,0.12,5.57
+USGS-PNW-008,47.5673,-122.6326,glacial_clay,Bremerton Kitsap WA,Kitsap Formation,56.80,18.45,7.10,2.80,2.95,2.10,2.35,0.90,0.18,0.14,6.23
+USGS-PNW-009,47.6262,-122.5212,marine_clay,Bainbridge Island WA,Whidbey Marine Clay,55.90,17.85,6.95,4.10,3.05,2.65,2.40,0.86,0.21,0.12,5.91
+USGS-PNW-010,47.5750,-122.4050,marine_clay,West Seattle Alki Bluff WA,Lawton Clay,56.40,18.25,7.05,3.85,3.10,2.50,2.55,0.88,0.20,0.13,5.09
+USGS-PNW-011,47.5280,-122.3200,alluvial_clay,Duwamish Waterway Seattle WA,Duwamish Deltaic Clay,57.95,16.90,6.25,3.40,2.35,2.75,2.05,0.81,0.25,0.11,7.18
+USGS-PNW-012,47.4829,-122.2171,shale,Renton Cedar River WA,Puget Group Shale,62.50,18.90,5.20,1.25,1.65,1.45,2.95,0.92,0.15,0.08,4.95
+USGS-PNW-013,47.3087,-122.0032,shale,Black Diamond Green River Gorge WA,Franklin Shale,61.80,19.40,5.55,1.10,1.55,1.30,3.10,0.95,0.14,0.09,5.02
+USGS-PNW-014,47.0810,-122.7040,marine_clay,Nisqually Delta Lacey WA,Puget Glaciomarine Drift,56.20,17.60,6.80,4.35,2.90,2.60,2.30,0.83,0.22,0.12,6.08
+USGS-PNW-015,47.0379,-122.9007,glacial_clay,Olympia Budd Inlet WA,Olympia Beds,58.75,17.15,6.50,3.20,2.55,2.40,2.25,0.82,0.19,0.11,6.08
+USGS-PNW-016,47.2043,-121.9915,andesite,Enumclaw Plateau WA,Ohanapecosh Andesite,59.40,17.10,6.80,6.35,3.15,3.75,1.45,0.85,0.24,0.13,0.78
+USGS-PNW-017,47.5005,-121.9760,siltstone,Tiger Mountain Issaquah WA,Renton Siltstone,66.40,15.20,4.85,1.90,1.60,2.35,2.55,0.72,0.16,0.07,4.20
+USGS-PNW-018,47.0979,-122.2035,andesite,Orting Carbon River WA,Mount Rainier Lahar Andesite,60.20,16.95,6.40,6.10,2.95,3.85,1.55,0.82,0.22,0.12,0.84
+USGS-PNW-019,47.9129,-122.0982,alluvial_clay,Snohomish River Valley WA,Snohomish Alluvium,59.10,16.85,6.05,2.95,2.25,2.45,2.20,0.79,0.21,0.10,7.05
+USGS-PNW-020,48.4712,-122.3254,glacial_clay,Skagit Valley Burlington WA,Everson Glaciomarine Clay,57.10,17.95,6.90,3.60,3.05,2.30,2.40,0.86,0.18,0.12,5.54
+USGS-PNW-021,48.2189,-122.6860,marine_clay,Coupeville Whidbey Island WA,Partridge Point Clay,55.40,18.05,7.20,4.50,3.20,2.55,2.35,0.89,0.20,0.13,5.53
+USGS-PNW-022,48.6601,-122.4875,shale,Chuckanut Drive Bellingham WA,Chuckanut Formation Shale,63.10,18.20,5.35,1.40,1.75,1.60,2.85,0.88,0.16,0.08,4.63
+USGS-PNW-023,48.6095,-123.1510,limestone,Roche Harbor San Juan Island WA,Orcas Limestone,5.20,1.45,0.65,50.80,1.25,0.15,0.22,0.08,0.06,0.04,40.10
+USGS-PNW-024,48.5390,-121.7470,limestone,Concrete Baker River WA,Chilliwack Limestone,7.40,1.95,0.85,48.90,1.60,0.20,0.35,0.10,0.08,0.05,38.52
+USGS-PNW-025,47.4240,-121.4137,granodiorite,Snoqualmie Pass WA,Snoqualmie Batholith,65.80,15.90,4.45,4.15,1.85,3.80,2.75,0.58,0.16,0.08,0.48
+USGS-PNW-026,47.8206,-121.5551,granodiorite,Index Skykomish WA,Index Batholith,66.45,15.65,4.20,3.95,1.70,3.90,2.85,0.55,0.15,0.07,0.53
+USGS-PNW-027,48.4960,-121.1850,granite,North Cascades Marblemount WA,Cascade Pass Granite,72.40,14.30,2.15,1.65,0.55,3.70,4.45,0.28,0.09,0.05,0.38
+USGS-PNW-028,46.7860,-121.7350,andesite,Paradise Mount Rainier WA,Mount Rainier Andesite,61.10,16.80,6.10,5.80,2.85,3.95,1.75,0.80,0.21,0.11,0.53
+USGS-PNW-029,46.2004,-122.1890,andesite,Mount St Helens WA,Spirit Lake Andesite,62.35,17.20,5.30,5.45,2.30,4.35,1.35,0.72,0.19,0.09,0.70
+USGS-PNW-030,48.7767,-121.8144,andesite,Mount Baker Kulshan WA,Black Buttes Andesite,59.85,17.05,6.45,6.20,3.25,3.70,1.65,0.88,0.23,0.12,0.62
+USGS-PNW-031,46.9445,-119.9870,basalt,Vantage Columbia River WA,Wanapum Basalt,51.20,13.85,13.60,8.75,4.65,2.80,1.25,2.45,0.42,0.22,0.81
+USGS-PNW-032,46.7313,-117.1796,basalt,Pullman Palouse WA,Grande Ronde Basalt,53.40,14.20,12.10,8.10,4.35,2.95,1.40,1.95,0.35,0.20,1.00
+USGS-PNW-033,46.8190,-120.4530,basalt,Yakima River Canyon WA,Roza Member Basalt,50.85,13.60,14.15,8.60,4.55,2.75,1.30,2.75,0.45,0.23,0.77
+USGS-PNW-034,45.7054,-121.5215,basalt,Hood River Gorge OR,Columbia River Basalt,52.10,14.05,12.85,8.40,4.80,2.85,1.15,2.20,0.38,0.21,1.01
+USGS-PNW-035,44.0582,-121.3153,basalt,Bend Deschutes OR,High Cascades Basalt,50.45,16.10,10.90,9.50,6.40,3.05,0.85,1.65,0.32,0.18,0.60
+USGS-PNW-036,43.6880,-121.2390,rhyolite,Newberry Caldera OR,Big Obsidian Flow,73.20,13.95,2.10,1.15,0.25,4.55,4.05,0.22,0.05,0.06,0.42
+USGS-PNW-037,42.9446,-122.1090,rhyolite,Crater Lake OR,Cleekwood Rhyodacite,71.40,14.65,2.65,1.95,0.55,4.70,3.15,0.35,0.08,0.07,0.45
+USGS-PNW-038,47.5580,-117.0780,kaolin_clay,Mica Peak Spokane WA,Latah Kaolin Deposit,47.80,35.60,1.05,0.25,0.30,0.18,0.75,1.15,0.08,0.02,12.82
+USGS-PNW-039,47.5150,-117.1940,kaolin_clay,Freeman Spokane Basin WA,Freeman Residual Kaolin,49.20,34.40,1.25,0.30,0.35,0.22,0.95,1.10,0.07,0.02,12.14
+USGS-PNW-040,46.7379,-116.7696,kaolin_clay,Troy Latah County ID,Bovill-Troy Kaolin,48.50,35.10,0.95,0.22,0.28,0.20,0.85,0.98,0.06,0.02,12.84
+USGS-PNW-041,47.9210,-123.5120,gabbro,Olympic Peninsula WA,Crescent Formation Gabbro,49.10,15.80,10.65,10.90,7.45,2.45,0.45,1.45,0.18,0.19,1.38
+USGS-PNW-042,48.4850,-122.6420,gabbro,Fidalgo Island Anacortes WA,Fidalgo Ophiolite Gabbro,48.65,16.40,9.85,11.45,7.90,2.20,0.35,1.20,0.15,0.18,1.67
+USGS-PNW-043,42.2730,-123.6620,gabbro,Klamath Mountains OR,Josephine Ophiolite Gabbro,49.40,16.15,9.50,11.20,8.10,2.30,0.30,1.10,0.14,0.17,1.64
+USGS-PNW-044,44.9429,-123.0351,siltstone,Willamette Valley Salem OR,Eugene Formation Siltstone,65.20,15.60,5.15,2.40,1.80,2.45,2.20,0.75,0.18,0.09,4.18
+USGS-PNW-045,46.1879,-123.8313,siltstone,Astoria Coast Range OR,Astoria Formation Siltstone,64.10,15.95,5.60,2.75,2.05,2.30,2.10,0.79,0.20,0.10,4.06
+USGS-PNW-046,44.9110,-116.0987,granite,McCall Idaho Batholith ID,Atlanta Lobe Granite,71.80,14.60,2.05,1.85,0.60,3.65,4.60,0.26,0.10,0.04,0.45
+USGS-PNW-047,37.7459,-119.5332,granite,Yosemite Sierra Nevada CA,Half Dome Granitic Suite,70.95,14.85,2.40,2.25,0.75,3.75,4.15,0.32,0.11,0.05,0.42
+USGS-PNW-048,44.6420,-110.8610,rhyolite,Madison Plateau Yellowstone WY,Lava Creek Rhyolite,75.10,12.60,1.85,0.75,0.15,3.50,5.20,0.18,0.04,0.04,0.59
+USGS-PNW-049,46.5891,-112.0391,limestone,Helena Montana MT,Madison Group Limestone,6.10,1.65,0.70,50.15,1.45,0.18,0.28,0.09,0.07,0.04,39.29
+USGS-PNW-050,32.9815,-82.8101,kaolin_clay,Sandersville Georgia GA,Huber Formation Kaolin,45.60,38.40,0.55,0.12,0.15,0.08,0.20,1.45,0.05,0.01,13.39
