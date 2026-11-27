@@ -21,7 +21,31 @@ module Ingestion
       "LOI"    => /\A(?:loi|loss_on_ignition)(?:_(?:wt_?pct|wt|pct|percent))*\z/
     }.freeze
 
+    MINOR_OXIDE_PATTERNS = {
+      "Li2O"  => /\Ali2o(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "B2O3"  => /\Ab2o3(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "SrO"   => /\Asro(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "BaO"   => /\Abao(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "ZnO"   => /\Azno(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "ZrO2"  => /\Azro2(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "SnO2"  => /\Asno2(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "Cr2O3" => /\Acr2o3(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "CuO"   => /\Acuo(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "CoO"   => /\Acoo(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "NiO"   => /\Anio(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "V2O5"  => /\Av2o5(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "CeO2"  => /\Aceo2(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "Pr2O3" => /\Apr2o3(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/,
+      "SO3"   => /\Aso3(?:_(?:wt_?pct|wt|pct|percent|xrf|icp|icpms|oes|aes|tot|total))*\z/
+    }.freeze
+
+    MINOR_OXIDE_MIN_WT_PCT = 0.01
+    FLUORINE_BARE_WT_PCT_MAX = 10.0
+
     VOLATILE_KEYS = %w[h2o_plus h2o_minus h2o_tot h2o co2].freeze
+    VOLATILE_PATTERNS = VOLATILE_KEYS.map do |vk|
+      /\A#{vk}(?:_(?:wt_?pct|wt|pct|percent))*\z/
+    end.freeze
 
     LATITUDE_KEYS = %w[latitude lat lat_dd lat_wgs84 dec_lat latitude_dd y].freeze
     LONGITUDE_KEYS = %w[longitude lng lon long lon_dd lng_dd long_dd lon_wgs84 dec_long dec_lon longitude_dd x].freeze
@@ -41,7 +65,7 @@ module Ingestion
       errors = []
 
       csv_content = read_input_content
-      csv_body = strip_preamble(csv_content)
+      csv_body = strip_footer(strip_preamble(csv_content))
       col_sep = detect_separator(csv_body)
 
       rows = CSV.parse(csv_body, headers: true, col_sep: col_sep, liberal_parsing: true)
@@ -73,6 +97,10 @@ module Ingestion
       raise NotImplementedError, "#{self.class} must define #default_source"
     end
 
+    def default_sample_media
+      nil
+    end
+
     def external_id_keys
       %w[external_id sample_id lab_id field_id id]
     end
@@ -81,7 +109,23 @@ module Ingestion
       %w[rock_type rock_name lithology material sample_type]
     end
 
+    def sample_media_keys
+      %w[sample_media media material]
+    end
+
+    def latitude_keys
+      LATITUDE_KEYS
+    end
+
+    def longitude_keys
+      LONGITUDE_KEYS
+    end
+
     def strip_preamble(content)
+      content
+    end
+
+    def strip_footer(content)
       content
     end
 
@@ -104,8 +148,11 @@ module Ingestion
           was_new = assay.new_record?
           assay.assign_attributes(
             rock_type: attrs[:rock_type],
+            sample_media: attrs[:sample_media],
             location: attrs[:location],
             oxides: attrs[:oxides],
+            minor_oxides: attrs[:minor_oxides],
+            trace_elements_ppm: attrs[:trace_elements_ppm],
             raw_metadata: attrs[:raw_metadata]
           )
 
@@ -166,8 +213,8 @@ module Ingestion
     def parse_row_attributes(row, row_num, errors)
       normalized_row = normalize_row_headers(row)
 
-      lat = extract_coordinate(normalized_row, LATITUDE_KEYS, -90.0..90.0)
-      lng = extract_coordinate(normalized_row, LONGITUDE_KEYS, -180.0..180.0)
+      lat = extract_coordinate(normalized_row, latitude_keys, -90.0..90.0)
+      lng = extract_coordinate(normalized_row, longitude_keys, -180.0..180.0)
       if lat.nil? || lng.nil?
         errors << { row: row_num, reason: "Missing or invalid latitude/longitude" }
         return nil
@@ -187,14 +234,20 @@ module Ingestion
       end
 
       rock_type = extract_rock_type(normalized_row)
+      sample_media = extract_sample_media(normalized_row)
+      trace_elements_ppm = extract_trace_elements_ppm(normalized_row)
+      minor_oxides = extract_minor_oxides(normalized_row, trace_elements_ppm)
       external_id = extract_external_id(normalized_row, lat, lng, rock_type, normalized_oxides)
 
       {
         source: @source,
         external_id: external_id,
         rock_type: rock_type,
+        sample_media: sample_media,
         location: Geolocatable.factory.point(lng, lat),
         oxides: normalized_oxides,
+        minor_oxides: minor_oxides,
+        trace_elements_ppm: trace_elements_ppm,
         raw_metadata: build_raw_metadata(row)
       }
     end
@@ -210,7 +263,7 @@ module Ingestion
 
     def detect_separator(content)
       first_line = content.lines.find { |l| !l.strip.empty? } || ""
-      first_line.include?("\t") && !first_line.include?(",") ? "\t" : ","
+      first_line.count("\t") > first_line.count(",") ? "\t" : ","
     end
 
     def canonicalize_header(header)
@@ -301,11 +354,127 @@ module Ingestion
 
       # Pass 3: Fallback LOI from H2O+/H2O-/CO2 if LOI was not explicitly provided
       if direct["LOI"].nil?
-        volatiles = VOLATILE_KEYS.filter_map { |vk| parse_float(normalized_row[vk], allow_negative: false) }
+        volatiles = VOLATILE_PATTERNS.filter_map do |pattern|
+          matched_val = nil
+          normalized_row.each do |key, raw_val|
+            next unless key.match?(pattern)
+
+            val = parse_float(raw_val, allow_negative: false)
+            unless val.nil?
+              matched_val = val
+              break
+            end
+          end
+          matched_val
+        end
         direct["LOI"] = volatiles.sum if volatiles.any?
       end
 
       direct
+    end
+
+    def extract_trace_elements_ppm(normalized_row)
+      CeramicOxides::TRACE_ELEMENT_KEYS.each_with_object({}) do |element, traces|
+        ppm = extract_trace_element_ppm(normalized_row, element)
+        traces[element] = ppm.round(4) if ppm&.positive?
+      end
+    end
+
+    def extract_trace_element_ppm(normalized_row, element)
+      el = element.downcase
+      ppm_pattern = /\A#{el}(?:_(?:icp|icpms|icp_ms|icp_oes|oes|aes|xrf|ms|la|inaa|aas|tot|total))*_ppm\z/
+      ppb_pattern = /\A#{el}(?:_(?:icp|icpms|icp_ms|icp_oes|oes|aes|xrf|ms|tot|total))*_ppb\z/
+      pct_pattern = /\A#{el}(?:_(?:icp|icpms|icp_ms|icp_oes|oes|aes|xrf|ms|tot|total))*_(?:wt_?pct|wt|pct|percent)\z/
+      bare_pattern = /\A#{el}\z/
+
+      normalized_row.each do |key, raw_val|
+        next unless key.match?(ppm_pattern)
+
+        val = parse_float(raw_val, allow_negative: false)
+        return val unless val.nil?
+      end
+
+      normalized_row.each do |key, raw_val|
+        next unless key.match?(ppb_pattern)
+
+        val = parse_float(raw_val, allow_negative: false)
+        return val / 1000.0 unless val.nil?
+      end
+
+      normalized_row.each do |key, raw_val|
+        next unless key.match?(pct_pattern)
+
+        val = parse_float(raw_val, allow_negative: false)
+        return val * 10_000.0 unless val.nil?
+      end
+
+      normalized_row.each do |key, raw_val|
+        next unless key.match?(bare_pattern)
+
+        val = parse_float(raw_val, allow_negative: false)
+        next if val.nil?
+
+        return val * 10_000.0 if element == "F" && val <= FLUORINE_BARE_WT_PCT_MAX
+
+        return val
+      end
+
+      nil
+    end
+
+    def extract_minor_oxides(normalized_row, trace_elements_ppm)
+      minor = {}
+
+      # Pass 1: Direct minor oxide wt% columns
+      normalized_row.each do |key, raw_val|
+        val = parse_float(raw_val, allow_negative: false)
+        next if val.nil? || !val.positive?
+
+        MINOR_OXIDE_PATTERNS.each do |oxide, pattern|
+          if key.match?(pattern)
+            minor[oxide] ||= val.round(4)
+            break
+          end
+        end
+      end
+
+      f_pct_pattern = /\Af(?:_(?:icp|icpms|icp_ms|icp_oes|oes|aes|xrf|ms|tot|total))*_(?:wt_?pct|wt|pct|percent)\z/
+      normalized_row.each do |key, raw_val|
+        next unless key.match?(f_pct_pattern)
+
+        val = parse_float(raw_val, allow_negative: false)
+        if val&.positive?
+          minor["F"] ||= val.round(4)
+          break
+        end
+      end
+
+      if !minor.key?("F") && normalized_row.key?("f")
+        val = parse_float(normalized_row["f"], allow_negative: false)
+        minor["F"] = val.round(4) if val&.positive? && val <= FLUORINE_BARE_WT_PCT_MAX
+      end
+
+      # Pass 2: Convert elemental ppm/wt% via CeramicOxides::MINOR_ELEMENT_TO_OXIDE_FACTORS when >= 0.01 wt%
+      CeramicOxides::MINOR_ELEMENT_TO_OXIDE_FACTORS.each do |element, spec|
+        oxide = spec[:oxide]
+        next if minor.key?(oxide)
+
+        ppm = trace_elements_ppm[element]
+        next if ppm.nil? || !ppm.positive?
+
+        oxide_wt_pct = (ppm / 10_000.0) * spec[:factor]
+        minor[oxide] = oxide_wt_pct.round(4) if oxide_wt_pct >= MINOR_OXIDE_MIN_WT_PCT
+      end
+
+      minor
+    end
+
+    def extract_sample_media(normalized_row)
+      sample_media_keys.each do |key|
+        val = normalized_row[key]&.to_s&.strip
+        return val.downcase if val && !val.empty? && !val.match?(MISSING_TOKENS)
+      end
+      default_sample_media
     end
 
     def extract_element_wt_pct(normalized_row, element)

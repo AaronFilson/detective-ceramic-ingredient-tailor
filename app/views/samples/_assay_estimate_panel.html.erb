@@ -35,6 +35,13 @@
       </div>
     </div>
 
+    <%# Ceramic Health, Kiln Fume & Hard-Rock Processing Hazard Alerts (Interop Partial) %>
+    <% if lookup_context.exists?("lab_assays/hazard_alerts", [], true) %>
+      <%= render "lab_assays/hazard_alerts",
+        sample: sample,
+        assay_result: assay_result %>
+    <% end %>
+
     <%# UMF Stoichiometry Readout + Hero SiO2 : Al2O3 Ratio Card %>
     <% fluxes = umf["fluxes"] || {} %>
     <% intermediates = umf["intermediates"] || {} %>
@@ -213,6 +220,39 @@
           </tfoot>
         </table>
       </div>
+
+      <% positive_minor_oxides = (assay_result.minor_oxides || {}).select { |_k, v| v.to_f.positive? } %>
+      <% if positive_minor_oxides.any? %>
+        <% ordered_minor_keys = (CeramicOxides::MINOR_KEYS & positive_minor_oxides.keys) + (positive_minor_oxides.keys - CeramicOxides::MINOR_KEYS) %>
+        <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-2.5" data-minor-oxides-strip>
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-[11px] font-bold uppercase tracking-wider text-stone-700">
+              Minor / Hard-Rock Glaze Oxides
+            </h4>
+            <span class="font-mono text-[10px] text-stone-500">
+              <%= pluralize(ordered_minor_keys.size, "minor oxide") %> detected
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <% ordered_minor_keys.each do |oxide_key| %>
+              <% val = positive_minor_oxides[oxide_key].to_f %>
+              <% group = CeramicOxides::ALL_OXIDE_GROUPS[oxide_key] %>
+              <div
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#D6C7B2] text-xs shadow-sm"
+                data-minor-oxide="<%= oxide_key %>"
+              >
+                <span class="font-mono font-bold text-stone-900"><%= oxide_key %></span>
+                <span class="font-mono font-semibold text-[#963B1D] tabular-nums"><%= format_oxide_pct(val) %></span>
+                <% if group.present? %>
+                  <span class="text-[9px] font-mono uppercase px-1 py-0.5 rounded bg-stone-100 text-stone-600"><%= group %></span>
+                <% else %>
+                  <span class="text-[9px] font-mono uppercase px-1 py-0.5 rounded bg-amber-100 text-amber-900">Volatile</span>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
     </div>
 
     <%# Transparent Reasoning Log Badges %>

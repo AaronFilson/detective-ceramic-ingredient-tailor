@@ -70,6 +70,7 @@ class SamplesController < ApplicationController
 
     if @sample.save
       enqueue_soil_profile_lookup_if_needed(@sample)
+      enqueue_mineral_occurrence_lookup_if_needed(@sample)
       self.class.estimate_sample(@sample)
       redirect_to sample_path(@sample), notice: "Sample \"#{@sample.title}\" saved and baseline assay calculated."
     else
@@ -93,6 +94,7 @@ class SamplesController < ApplicationController
 
     if @sample.save
       enqueue_soil_profile_lookup_if_needed(@sample)
+      enqueue_mineral_occurrence_lookup_if_needed(@sample)
       @assay_result = self.class.estimate_sample(@sample, field_observation: @sample.latest_field_observation)
       redirect_to sample_path(@sample), notice: "Sample updated and chemical assay recalculated."
     else
@@ -140,11 +142,17 @@ class SamplesController < ApplicationController
   def self.lookup_soil_profile(lat:, lng:)
     return nil if lat.nil? || lng.nil?
 
-    if defined?(Clients::UsdaSsurgoClient)
+    profile = if defined?(Clients::UsdaSsurgoClient)
       Clients::UsdaSsurgoClient.lookup(lat: lat.to_f, lng: lng.to_f)
     else
       SoilProfile.within_radius(lat.to_f, lng.to_f, 250).ordered_by_distance(lat.to_f, lng.to_f).first
     end
+
+    if profile.nil? && defined?(Clients::IsricSoilgridsClient)
+      profile = Clients::IsricSoilgridsClient.lookup(lat: lat.to_f, lng: lng.to_f)
+    end
+
+    profile
   rescue StandardError => e
     Rails.logger.warn("[SamplesController] Soil profile lookup failed (#{e.class}): #{e.message}")
     nil
@@ -198,6 +206,18 @@ class SamplesController < ApplicationController
     end
     @quick_locations = QUICK_LOCATIONS
     @reference_assays_payload = build_reference_assays_payload(@map_lat, @map_lng)
+    @mineral_occurrences_payload = build_mineral_occurrences_payload(@map_lat, @map_lng)
+    @nearby_mineral_occurrences = MineralOccurrence
+      .where.not(location: nil)
+      .within_radius(@map_lat, @map_lng, 100_000)
+      .with_distance_from(@map_lat, @map_lng)
+      .ordered_by_distance(@map_lat, @map_lng)
+      .limit(8)
+    @nearby_xrd_assays = ReferenceAssay
+      .where("xrd_mineralogy <> '{}'::jsonb")
+      .within_radius(@map_lat, @map_lng, 250_000)
+      .ordered_by_distance(@map_lat, @map_lng)
+      .limit(5)
   end
 
   def build_reference_assays_payload(lat, lng)
@@ -222,6 +242,27 @@ class SamplesController < ApplicationController
             CaO: assay.oxide_value("CaO")&.round(2),
             LOI: assay.oxide_value("LOI")&.round(2)
           }
+        }
+      end
+  end
+
+  def build_mineral_occurrences_payload(lat, lng)
+    MineralOccurrence
+      .where.not(location: nil)
+      .ordered_by_distance(lat, lng)
+      .limit(40)
+      .map do |occ|
+        {
+          id: occ.id,
+          external_id: occ.external_id,
+          name: occ.name,
+          source: occ.source,
+          deposit_type: occ.deposit_type,
+          commodities: Array(occ.commodities),
+          minerals: Array(occ.minerals),
+          ceramic_highlights: occ.ceramic_highlights,
+          lat: occ.latitude&.round(5),
+          lng: occ.longitude&.round(5)
         }
       end
   end
@@ -259,6 +300,16 @@ class SamplesController < ApplicationController
     SoilProfileLookupJob.perform_later(sample.id)
   rescue StandardError => e
     Rails.logger.warn("[SamplesController] Soil profile lookup job enqueue failed (#{e.class}): #{e.message}")
+  end
+
+  def enqueue_mineral_occurrence_lookup_if_needed(sample)
+    return unless defined?(MineralOccurrenceLookupJob)
+    return if sample.latitude.nil? || sample.longitude.nil?
+    return if MineralOccurrence.by_source("usgs_mrds").within_radius(sample.latitude, sample.longitude, 50_000).exists?
+
+    MineralOccurrenceLookupJob.perform_later(sample.latitude, sample.longitude)
+  rescue StandardError => e
+    Rails.logger.warn("[SamplesController] Mineral occurrence lookup job enqueue failed (#{e.class}): #{e.message}")
   end
 
   def parse_coordinate(value)
