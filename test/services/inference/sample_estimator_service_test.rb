@@ -167,5 +167,59 @@ module Inference
         SampleEstimatorService.call(nil)
       end
     end
+
+    test "persists minor_oxides and trace_elements_ppm and computes full-oxide UMF with and without field observations" do
+      rich_stub = Struct.new(
+        :oxides,
+        :oxide_ranges,
+        :minor_oxides,
+        :trace_elements_ppm,
+        :confidence_score,
+        :reasoning_log,
+        keyword_init: true
+      )
+
+      minor_estimator = ->(_sample) do
+        rich_stub.new(
+          oxides: @baseline_oxides,
+          oxide_ranges: @baseline_ranges,
+          minor_oxides: { "Li2O" => 1.5, "SrO" => 0.4, "B2O3" => 0.8 },
+          trace_elements_ppm: { "As" => 65.0, "Rb" => 410.0 },
+          confidence_score: 0.74,
+          reasoning_log: [ "Spatial baseline with propagated minor/trace chemistry." ]
+        )
+      end
+
+      # Without field observation
+      assay = SampleEstimatorService.call(@sample, baseline_estimator: minor_estimator)
+      assert_equal({ "Li2O" => 1.5, "SrO" => 0.4, "B2O3" => 0.8 }, assay.minor_oxides)
+      assert_equal({ "As" => 65.0, "Rb" => 410.0 }, assay.trace_elements_ppm)
+      assert_includes assay.umf_formula["fluxes"].keys, "Li2O"
+      assert_includes assay.umf_formula["fluxes"].keys, "SrO"
+      assert_includes assay.umf_formula["intermediates"].keys, "B2O3"
+      assert_in_delta 1.0, assay.umf_formula["flux_total"], 0.0005
+
+      # With field observation — minor oxides remain persisted and included in recalculated UMF
+      obs = @sample.field_observations.create!(vinegar_fizz: :slight, fired_color: "buff")
+      modified_assay = SampleEstimatorService.call(@sample, field_observation: obs, baseline_estimator: minor_estimator)
+
+      assert_equal assay.id, modified_assay.id
+      assert_equal({ "Li2O" => 1.5, "SrO" => 0.4, "B2O3" => 0.8 }, modified_assay.minor_oxides)
+      assert_equal({ "As" => 65.0, "Rb" => 410.0 }, modified_assay.trace_elements_ppm)
+      assert_includes modified_assay.umf_formula["fluxes"].keys, "Li2O"
+      assert_includes modified_assay.umf_formula["intermediates"].keys, "B2O3"
+      assert_equal(
+        Chemistry::UmfCalculator.call(modified_assay.oxides, minor_oxides: modified_assay.minor_oxides),
+        modified_assay.umf_formula
+      )
+    end
+
+    test "keeps zero-minor-oxide UMF byte-for-byte identical when baseline carries no minor oxides" do
+      assay = SampleEstimatorService.call(@sample, baseline_estimator: @stub_estimator)
+
+      assert_equal({}, assay.minor_oxides)
+      assert_equal({}, assay.trace_elements_ppm)
+      assert_equal Chemistry::UmfCalculator.call(assay.oxides), assay.umf_formula
+    end
   end
 end

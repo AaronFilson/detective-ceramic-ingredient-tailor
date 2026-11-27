@@ -5,6 +5,8 @@ module Inference
     FallbackBaseline = Struct.new(
       :oxides,
       :oxide_ranges,
+      :minor_oxides,
+      :trace_elements_ppm,
       :confidence_score,
       :reasoning_log,
       keyword_init: true
@@ -55,19 +57,21 @@ module Inference
 
       base_log = Array(baseline.reasoning_log).map(&:to_s)
       base_confidence = baseline.confidence_score.to_f
+      final_minor_oxides = extract_baseline_numeric_hash(baseline, :minor_oxides)
+      final_trace_elements = extract_baseline_numeric_hash(baseline, :trace_elements_ppm)
 
       if observation
         modified = Inference::ObservationModifierService.call(baseline.oxide_ranges, observation)
         final_oxides = modified.oxides
         final_ranges = modified.oxide_ranges
-        final_umf = modified.umf_formula
+        final_umf = compute_umf(final_oxides, final_minor_oxides, fallback_umf: modified.umf_formula)
         combined_log = base_log + Array(modified.reasoning_log).map(&:to_s)
         final_confidence = (base_confidence + modified.confidence_adjustment.to_f).clamp(0.0, 1.0).round(3)
       else
         raw_oxides = baseline.oxides.is_a?(Hash) && !baseline.oxides.empty? ? baseline.oxides : extract_medians(baseline.oxide_ranges)
         final_oxides = Inference::ObservationModifierService.normalize_exact_oxides(raw_oxides.transform_keys(&:to_s))
         final_ranges = baseline.oxide_ranges || {}
-        final_umf = Chemistry::UmfCalculator.call(final_oxides)
+        final_umf = compute_umf(final_oxides, final_minor_oxides)
         combined_log = base_log
         final_confidence = base_confidence.clamp(0.0, 1.0).round(3)
       end
@@ -75,6 +79,8 @@ module Inference
       persist_assay_result(
         oxides: final_oxides,
         oxide_ranges: final_ranges,
+        minor_oxides: final_minor_oxides,
+        trace_elements_ppm: final_trace_elements,
         umf_formula: final_umf,
         confidence_score: final_confidence,
         reasoning_log: combined_log
@@ -138,9 +144,35 @@ module Inference
       FallbackBaseline.new(
         oxides: oxides,
         oxide_ranges: ranges,
+        minor_oxides: {},
+        trace_elements_ppm: {},
         confidence_score: 0.25,
         reasoning_log: [ "Applied default #{category.tr('_', ' ')} ceramic chemistry baseline (spatial estimator unavailable)." ]
       )
+    end
+
+    def extract_baseline_numeric_hash(baseline, attr_name)
+      return {} unless baseline.respond_to?(attr_name)
+
+      raw = baseline.public_send(attr_name)
+      return {} unless raw.is_a?(Hash)
+
+      raw.each_with_object({}) do |(k, v), acc|
+        next if v.nil?
+
+        num = Float(v)
+        acc[k.to_s] = num if num.finite? && num.positive?
+      rescue ArgumentError, TypeError
+        next
+      end
+    end
+
+    def compute_umf(final_oxides, final_minor_oxides, fallback_umf: nil)
+      if final_minor_oxides.any?
+        Chemistry::UmfCalculator.call(final_oxides, minor_oxides: final_minor_oxides)
+      else
+        fallback_umf || Chemistry::UmfCalculator.call(final_oxides)
+      end
     end
   end
 end

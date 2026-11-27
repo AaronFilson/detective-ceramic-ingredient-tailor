@@ -5,6 +5,8 @@ module Inference
     Result = Struct.new(
       :oxide_ranges,
       :oxides,
+      :minor_oxides,
+      :trace_elements_ppm,
       :confidence_score,
       :sample_count,
       :search_radius_meters,
@@ -20,8 +22,14 @@ module Inference
     MAX_GLOBAL_ASSAYS = 500
     RANGE_PRECISION = 3
     OXIDE_PRECISION = 2
+    MINOR_OXIDE_MIN_WT_PCT = 0.01
+    MINOR_OXIDE_PRECISION = 4
+    MINOR_OXIDE_FULL_COVERAGE_RATIO = 0.20
+    TRACE_ELEMENT_PRECISION = 1
+    TRACE_ELEMENT_QUANTILE = 0.75
 
     VERIFIED_LAB_SOURCES = %w[community_verified_xrf community_verified_icpms].freeze
+    AUTHORITATIVE_MINOR_SOURCES = (VERIFIED_LAB_SOURCES + %w[usgs_ds801]).freeze
     VERIFIED_SOURCE_WEIGHT = 2.5
     PREFERRED_LITHOLOGY_WEIGHT = 1.8
     IDW_SMOOTHING_KM = 2.0
@@ -432,10 +440,13 @@ module Inference
 
       apply_soil_profile_priors!(raw_estimates, oxide_ranges, category)
       normalized_oxides = normalize_to_exact_100(raw_estimates)
+      minor_oxides, trace_elements_ppm = propagate_minor_and_trace_chemistry(assays, weights)
 
       Result.new(
         oxide_ranges: oxide_ranges,
         oxides: normalized_oxides,
+        minor_oxides: minor_oxides,
+        trace_elements_ppm: trace_elements_ppm,
         confidence_score: confidence,
         sample_count: assays.size,
         search_radius_meters: search_radius,
@@ -456,6 +467,8 @@ module Inference
       Result.new(
         oxide_ranges: oxide_ranges,
         oxides: normalized_oxides,
+        minor_oxides: {},
+        trace_elements_ppm: {},
         confidence_score: confidence,
         sample_count: 0,
         search_radius_meters: nil,
@@ -463,6 +476,93 @@ module Inference
         reasoning_log: @reasoning_log,
         matched_assay_ids: []
       )
+    end
+
+    def propagate_minor_and_trace_chemistry(assays, weights)
+      return [ {}, {} ] if assays.empty?
+
+      normalized_minors = assays.map { |assay| normalize_numeric_hash(assay.minor_oxides) }
+      normalized_traces = assays.map { |assay| normalize_numeric_hash(assay.trace_elements_ppm) }
+      contributing_indices = {}
+
+      minor_oxides = {}
+      CeramicOxides::MINOR_KEYS.each do |oxide|
+        down_key = oxide.downcase
+        reporting = []
+        assays.each_with_index do |assay, idx|
+          val = normalized_minors[idx][down_key]
+          next unless val
+
+          reporting << [ val, weights[idx], assay, idx ]
+        end
+        next if reporting.empty?
+
+        weighted_med = weighted_percentile(reporting.map { |v, w, _, _| [ v, w ] }, 0.50)
+        coverage_ratio = reporting.size.to_f / assays.size
+        has_authoritative = reporting.any? { |_, _, assay, _| AUTHORITATIVE_MINOR_SOURCES.include?(assay.source.to_s) }
+
+        estimate =
+          if coverage_ratio >= MINOR_OXIDE_FULL_COVERAGE_RATIO || has_authoritative
+            weighted_med
+          else
+            scale = (coverage_ratio / MINOR_OXIDE_FULL_COVERAGE_RATIO).clamp(0.0, 1.0)
+            weighted_med * scale
+          end
+
+        next if estimate < MINOR_OXIDE_MIN_WT_PCT
+
+        minor_oxides[oxide] = estimate.round(MINOR_OXIDE_PRECISION)
+        reporting.each { |_, _, _, idx| contributing_indices[idx] = true }
+      end
+
+      trace_elements_ppm = {}
+      CeramicOxides::TRACE_ELEMENT_KEYS.each do |element|
+        down_key = element.downcase
+        reporting = []
+        assays.each_with_index do |_, idx|
+          val = normalized_traces[idx][down_key]
+          next unless val
+
+          reporting << [ val, weights[idx], idx ]
+        end
+        next if reporting.empty?
+
+        p75 = weighted_percentile(reporting.map { |v, w, _| [ v, w ] }, TRACE_ELEMENT_QUANTILE).round(TRACE_ELEMENT_PRECISION)
+        next unless p75.positive?
+
+        trace_elements_ppm[element] = p75
+        reporting.each { |_, _, idx| contributing_indices[idx] = true }
+      end
+
+      log_minor_and_trace_propagation(minor_oxides, trace_elements_ppm, contributing_indices.size, assays.size)
+      [ minor_oxides, trace_elements_ppm ]
+    end
+
+    def log_minor_and_trace_propagation(minor_oxides, trace_elements_ppm, contributing_count, total_count)
+      return if minor_oxides.empty? && trace_elements_ppm.empty?
+
+      if minor_oxides.any? && trace_elements_ppm.any?
+        @reasoning_log << "Propagated regional minor oxides (#{minor_oxides.keys.join(', ')}) and P75 trace elements (#{trace_elements_ppm.keys.join(', ')}) from #{contributing_count}/#{total_count} matched assays for hazard screening."
+      elsif minor_oxides.any?
+        @reasoning_log << "Propagated regional minor oxides (#{minor_oxides.keys.join(', ')}) from #{contributing_count}/#{total_count} matched assays for UMF & hazard screening."
+      else
+        @reasoning_log << "Propagated P75 trace elements (#{trace_elements_ppm.keys.join(', ')}) from #{contributing_count}/#{total_count} matched assays for hazard screening."
+      end
+    end
+
+    def normalize_numeric_hash(hash)
+      return {} unless hash.is_a?(Hash)
+
+      hash.each_with_object({}) do |(k, v), acc|
+        next if v.nil?
+
+        num = Float(v)
+        next if num.nan? || num.infinite? || !num.positive?
+
+        acc[k.to_s.strip.downcase] = num
+      rescue ArgumentError, TypeError
+        next
+      end
     end
 
     def assay_weight(assay, preferred_types:)

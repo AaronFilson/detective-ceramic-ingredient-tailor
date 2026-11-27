@@ -1,0 +1,102 @@
+<%
+  setting = local_assigns[:studio_setting] || (respond_to?(:current_studio_setting) ? current_studio_setting : StudioSetting.current)
+  effective_lat = local_assigns[:lat].presence || setting.default_lat
+  effective_lng = local_assigns[:lng].presence || setting.default_lng
+  selected_radius = (local_assigns[:radius_km].presence || 150).to_i
+  selected_radius = 150 unless [ 100, 150, 300 ].include?(selected_radius)
+  status = setting.regional_sync_status.to_s.presence || "idle"
+  sync_error = local_assigns[:sync_error]
+  georoc_ready = defined?(Clients::GeorocClient) && Clients::GeorocClient.configured?
+
+  status_label, status_classes =
+    case status
+    when "queued"
+      [ "Queued", "bg-amber-50 text-amber-900 border-amber-200" ]
+    when "running"
+      [ "Running", "bg-[#1E4E79]/10 text-[#1E4E79] border-[#1E4E79]/25" ]
+    when "synced"
+      [ "Synced", "bg-emerald-50 text-emerald-800 border-emerald-200" ]
+    when "error"
+      [ "Error", "bg-red-50 text-red-900 border-red-200" ]
+    else
+      [ "Idle", "bg-stone-100 text-stone-700 border-stone-200" ]
+    end
+
+  summary_classes =
+    case status
+    when "error"
+      "bg-red-50 border-red-200 text-red-900"
+    when "synced"
+      "bg-emerald-50 border-emerald-200 text-emerald-950"
+    when "queued", "running"
+      "bg-amber-50/80 border-amber-200 text-amber-950"
+    else
+      "bg-white border-[#E8DFD0] text-stone-700"
+    end
+%>
+
+<div id="regional_sync_card">
+  <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3" data-regional-sync-card>
+    <div class="flex flex-wrap items-start justify-between gap-2.5">
+      <div class="space-y-0.5 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#1E4E79]/12 text-[#1E4E79] border border-[#1E4E79]/25">
+            Regional Geochemical Atlas
+          </span>
+          <span
+            data-regional-sync-status="<%= status %>"
+            class="px-2 py-0.5 rounded-full text-[10px] font-semibold border <%= status_classes %>"
+          >
+            <%= status_label %>
+          </span>
+        </div>
+        <h4 class="text-xs sm:text-sm font-bold text-stone-900 leading-snug">
+          One-Click Regional Atlas Hydration
+        </h4>
+        <p class="text-[11px] text-stone-600 leading-relaxed">
+          Pull live USGS MRDS hard-rock mineral deposits, USGS ScienceBase geochemistry<%= georoc_ready ? ", and GEOROC 2.0 assays" : "" %> around
+          <span class="font-mono text-stone-800"><%= format("%.4f, %.4f", effective_lat.to_f, effective_lng.to_f) %></span>.
+        </p>
+      </div>
+
+      <% if setting.regional_synced_at.present? %>
+        <span class="shrink-0 font-mono text-[10px] text-stone-500 bg-white border border-[#E8DFD0] rounded-lg px-2 py-1" data-regional-synced-at>
+          Synced <%= time_ago_in_words(setting.regional_synced_at) %> ago
+        </span>
+      <% end %>
+    </div>
+
+    <% if sync_error.present? %>
+      <div class="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-900" data-regional-sync-error>
+        <%= sync_error %>
+      </div>
+    <% end %>
+
+    <% if setting.regional_sync_summary.present? %>
+      <div class="rounded-lg border px-3 py-2 text-xs <%= summary_classes %>" data-regional-sync-summary>
+        <%= setting.regional_sync_summary %>
+      </div>
+    <% end %>
+
+    <%= form_with url: regional_sync_path, method: :post, data: { turbo: true }, class: "flex flex-wrap items-center justify-between gap-2.5 pt-1" do %>
+      <%= hidden_field_tag :lat, effective_lat %>
+      <%= hidden_field_tag :lng, effective_lng %>
+
+      <div class="flex items-center gap-2">
+        <%= label_tag :radius_km, "Search Radius", class: "text-[11px] font-semibold text-stone-700" %>
+        <%= select_tag :radius_km,
+          options_for_select([ [ "100 km", 100 ], [ "150 km", 150 ], [ "300 km", 300 ] ], selected_radius),
+          class: "rounded-lg border border-[#D6C7B2] bg-[#FCFBF8] px-2.5 py-1.5 text-xs font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/30 focus:border-[#1E4E79]" %>
+      </div>
+
+      <button
+        type="submit"
+        data-regional-sync-submit
+        class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1E4E79] hover:bg-[#163B5C] text-[#FAF7F2] text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+      >
+        <span aria-hidden="true">&#8635;</span>
+        <span>Hydrate Regional Atlas</span>
+      </button>
+    <% end %>
+  </div>
+</div>
