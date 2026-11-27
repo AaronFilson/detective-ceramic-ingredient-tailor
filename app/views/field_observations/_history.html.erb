@@ -7,40 +7,76 @@
       </div>
       <div class="space-y-1.5">
         <% observations.each do |obs| %>
-          <div class="rounded-lg bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-1.5 text-[11px] text-stone-700 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-semibold">
-                Fizz: <%= obs.vinegar_fizz %>
+          <% fit_badges = body_fit_assessment(obs) %>
+          <div class="rounded-lg bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-2 text-[11px] text-stone-700 space-y-1.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-semibold">
+                  Fizz: <%= obs.vinegar_fizz %>
+                </span>
+                <% if obs.slaking_behavior.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                    Slake: <%= obs.slaking_behavior.humanize %>
+                  </span>
+                <% end %>
+                <% if obs.plasticity.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                    Plasticity: <%= obs.plasticity.humanize %>
+                  </span>
+                <% end %>
+                <% if obs.fired_color.present? || obs.raw_color.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                    Color: <%= obs.fired_color.presence || obs.raw_color %>
+                  </span>
+                <% end %>
+                <% if obs.fired_cone.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    Cone <%= obs.fired_cone %>
+                  </span>
+                <% end %>
+                <% if obs.water_of_plasticity.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    WoP <%= format("%.1f%%", obs.water_of_plasticity.to_f) %>
+                  </span>
+                <% end %>
+                <% if obs.drying_shrinkage_percent.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    Dry <%= format("%.1f%%", obs.drying_shrinkage_percent.to_f) %>
+                  </span>
+                <% end %>
+                <% if obs.firing_shrinkage_percent.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    Fire <%= format("%.1f%%", obs.firing_shrinkage_percent.to_f) %>
+                  </span>
+                <% end %>
+                <% if obs.boiling_water_absorption_percent.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    Abs <%= format("%.1f%%", obs.boiling_water_absorption_percent.to_f) %>
+                  </span>
+                <% end %>
+                <% if obs.shrinkage_percent.present? %>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                    <%= format("%.1f%%", obs.shrinkage_percent.to_f) %> shrink
+                  </span>
+                <% end %>
+              </div>
+              <span class="font-mono text-[10px] text-stone-400">
+                #<%= obs.id %>
               </span>
-              <% if obs.slaking_behavior.present? %>
-                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
-                  Slake: <%= obs.slaking_behavior.humanize %>
-                </span>
-              <% end %>
-              <% if obs.plasticity.present? %>
-                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
-                  Plasticity: <%= obs.plasticity.humanize %>
-                </span>
-              <% end %>
-              <% if obs.fired_color.present? || obs.raw_color.present? %>
-                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
-                  Color: <%= obs.fired_color.presence || obs.raw_color %>
-                </span>
-              <% end %>
-              <% if obs.fired_cone.present? %>
-                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
-                  Cone <%= obs.fired_cone %>
-                </span>
-              <% end %>
-              <% if obs.shrinkage_percent.present? %>
-                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
-                  <%= format("%.1f%%", obs.shrinkage_percent.to_f) %> shrink
-                </span>
-              <% end %>
             </div>
-            <span class="font-mono text-[10px] text-stone-400">
-              #<%= obs.id %>
-            </span>
+
+            <% if fit_badges.any? %>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <% fit_badges.each do |badge| %>
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border <%= badge[:classes] %>"
+                    title="<%= badge[:detail] %>"
+                  >
+                    <%= badge[:label] %>
+                  </span>
+                <% end %>
+              </div>
+            <% end %>
           </div>
         <% end %>
       </div>

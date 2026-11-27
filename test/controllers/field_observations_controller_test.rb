@@ -132,4 +132,71 @@ class FieldObservationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "vigorous", obs.reload.vinegar_fizz
     assert_includes response.body, '<turbo-stream action="replace" target="assay_estimate_panel">'
   end
+
+  test "POST /samples/:sample_id/field_observations persists 4 Glaze Vault physical body sheet fields and renders body fit risk badges" do
+    post sample_field_observations_path(@sample, format: :turbo_stream),
+      params: {
+        field_observation: {
+          vinegar_fizz: "none",
+          plasticity: "high_plastic",
+          fired_cone: "6",
+          water_of_plasticity: "28.5",
+          drying_shrinkage_percent: "8.4",
+          firing_shrinkage_percent: "5.2",
+          boiling_water_absorption_percent: "7.8"
+        }
+      }
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+
+    obs = @sample.latest_field_observation
+    assert_in_delta 28.5, obs.water_of_plasticity.to_f, 0.01
+    assert_in_delta 8.4, obs.drying_shrinkage_percent.to_f, 0.01
+    assert_in_delta 5.2, obs.firing_shrinkage_percent.to_f, 0.01
+    assert_in_delta 7.8, obs.boiling_water_absorption_percent.to_f, 0.01
+
+    assert_includes response.body, "Porous Earthenware / Weeping Risk"
+    assert_includes response.body, "High Drying Crack/Warp Risk"
+    assert_includes response.body, "data-body-fit-badges"
+    assert_includes response.body, "data-stull-chart"
+    assert_includes response.body, "WoP 28.5%"
+    assert_includes response.body, "Dry 8.4%"
+    assert_includes response.body, "Fire 5.2%"
+    assert_includes response.body, "Abs 7.8%"
+  end
+
+  test "POST /samples/:sample_id/field_observations renders vitreous stoneware badge for functional absorption and safe drying shrinkage" do
+    post sample_field_observations_path(@sample, format: :turbo_stream),
+      params: {
+        field_observation: {
+          vinegar_fizz: "none",
+          fired_cone: "10",
+          water_of_plasticity: "22.0",
+          drying_shrinkage_percent: "5.5",
+          firing_shrinkage_percent: "6.5",
+          boiling_water_absorption_percent: "1.4"
+        }
+      }
+
+    assert_response :success
+    assert_includes response.body, "Vitreous Stoneware (Functional)"
+    assert_includes response.body, "Safe Drying Shrinkage"
+  end
+
+  test "POST /samples/:sample_id/field_observations with out-of-range boiling absorption returns 422 via Turbo Stream" do
+    assert_no_difference -> { @sample.field_observations.count } do
+      post sample_field_observations_path(@sample, format: :turbo_stream),
+        params: {
+          field_observation: {
+            vinegar_fizz: "none",
+            boiling_water_absorption_percent: "125"
+          }
+        }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, '<turbo-stream action="replace" target="field_observation_form">'
+    assert_includes response.body, "Boiling water absorption percent"
+  end
 end

@@ -64,9 +64,11 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[type='range'][data-map-picker-target='macrostratOpacity'][value='0.65']"
     assert_select "turbo-frame#geologic_unit_card"
     assert_select "button[data-action='click->map-picker#jumpToLocation']", minimum: 3
+    assert_select "header a[href='/blends']", text: /Blend Builder/
     assert_includes response.body, "Tacoma WA"
     assert_includes response.body, "Mt. Rainier Cascades"
     assert_includes response.body, "Columbia Gorge Basalt"
+    assert_includes response.body, "USDA SSURGO soil horizon profile populates automatically for US coordinates"
   end
 
   test "GET /samples/new renders blank draft sample centered on Tacoma WA" do
@@ -173,7 +175,7 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action='#{sample_field_observations_path(sample)}'][method='post']"
     assert_select "input[name='field_observation[vinegar_fizz]'][value='vigorous']"
 
-    # Step 3 assay panel with all canonical oxides, UMF, reasoning log, and interop links
+    # Step 3 assay panel with all canonical oxides, UMF, Stull SVG chart, reasoning log, and interop links
     assert_select "#assay_estimate_panel" do
       CeramicOxides::KEYS.each do |oxide|
         assert_select "tr[data-oxide-row='#{oxide}']"
@@ -181,6 +183,9 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       assert_includes response.body, "SiO2 : Al2O3 Molar Ratio"
       assert_includes response.body, "RO + R2O"
       assert_includes response.body, "100.0%"
+      assert_select "svg[data-stull-chart]"
+      assert_select "[data-stull-active-point]"
+      assert_select "[data-stull-zone]"
       assert_select "[data-reasoning-log] li", minimum: 1
       assert_select "[data-controller='clipboard']"
       assert_select "button[data-clipboard-url-param='/samples/#{sample.id}/export/glazecalc.json']"
@@ -188,6 +193,156 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       assert_select "a[href='/samples/#{sample.id}/export/glaze_vault.json?download=1']"
       assert_includes response.body, "/api/v1/materials/#{sample.id}"
     end
+  end
+
+  test "GET /samples/:id renders Stull shift vector when both heuristic and verified lab assays exist" do
+    sample = UserSample.create!(
+      title: "Calibrated Bluff Clay",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443
+    )
+    SamplesController.estimate_sample(sample)
+    sample.assay_results.create!(
+      source_type: :verified_lab_xrf,
+      lab_name: "WSU GeoAnalytical Lab",
+      oxides: {
+        "SiO2" => 64.5, "Al2O3" => 15.8, "Fe2O3" => 4.2, "CaO" => 4.8,
+        "MgO" => 2.1, "Na2O" => 2.4, "K2O" => 2.7, "TiO2" => 0.7,
+        "P2O5" => 0.15, "MnO" => 0.05, "LOI" => 2.6
+      },
+      umf_formula: Chemistry::UmfCalculator.call(
+        "SiO2" => 64.5, "Al2O3" => 15.8, "Fe2O3" => 4.2, "CaO" => 4.8,
+        "MgO" => 2.1, "Na2O" => 2.4, "K2O" => 2.7, "TiO2" => 0.7,
+        "P2O5" => 0.15, "MnO" => 0.05, "LOI" => 2.6
+      ),
+      confidence_score: 0.98
+    )
+
+    get sample_path(sample)
+    assert_response :success
+
+    assert_select "svg[data-stull-chart]" do
+      assert_select "line[data-stull-shift-vector]"
+      assert_select "[data-stull-comparison-point]"
+      assert_select "[data-stull-active-point]"
+    end
+    assert_includes response.body, "WSU GeoAnalytical Lab"
+    assert_includes response.body, "Spatial Heuristic → Verified Lab"
+  end
+
+  test "GET /samples/:id renders USDA soil profile digging depth card with clay bar and CaCO3 warning" do
+    soil = SoilProfile.create!(
+      mukey: "468120",
+      map_unit_name: "Alderwood gravelly sandy loam, 0 to 8 percent slopes",
+      component_name: "Alderwood",
+      component_percent: 85,
+      max_clay_pct: 42.0,
+      max_plasticity_index: 24.0,
+      max_caco3_pct: 4.5,
+      latitude: 47.2529,
+      longitude: -122.4443,
+      horizons: [
+        { "hzname" => "A", "top_cm" => 0, "bottom_cm" => 35, "clay_pct" => 14.0, "plasticity_index" => 8.0, "caco3_pct" => 0.0 },
+        { "hzname" => "Bt", "top_cm" => 35, "bottom_cm" => 90, "clay_pct" => 42.0, "plasticity_index" => 24.0, "caco3_pct" => 4.5 }
+      ]
+    )
+    sample = UserSample.create!(
+      title: "Alderwood Subsoil Clay",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443,
+      soil_profile: soil
+    )
+    SamplesController.estimate_sample(sample)
+
+    get sample_path(sample)
+    assert_response :success
+
+    assert_select "#soil_profile_card [data-soil-profile-card]" do
+      assert_includes response.body, "Alderwood"
+      assert_includes response.body, "85%"
+      assert_includes response.body, "MUKEY #468120"
+      assert_includes response.body, "Best clay horizon:"
+      assert_includes response.body, "35–90 cm"
+      assert_includes response.body, "42% clay"
+      assert_includes response.body, "PI 24"
+      assert_includes response.body, "Expect Vinegar Fizz"
+    end
+  end
+
+  test "GET /samples/geologic_lookup summarizes cached soil profile inside Turbo Frame" do
+    SoilProfile.create!(
+      mukey: "468999",
+      map_unit_name: "Kitsap silt loam",
+      component_name: "Kitsap",
+      component_percent: 90,
+      max_clay_pct: 38.0,
+      max_plasticity_index: 20.0,
+      max_caco3_pct: 3.0,
+      latitude: 47.2529,
+      longitude: -122.4443,
+      horizons: [
+        { "hzname" => "Bt", "top_cm" => 30, "bottom_cm" => 85, "clay_pct" => 38.0, "plasticity_index" => 20.0, "caco3_pct" => 3.0 }
+      ]
+    )
+
+    get geologic_lookup_samples_path(lat: 47.2529, lng: -122.4443),
+      headers: { "Turbo-Frame" => "geologic_unit_card" }
+
+    assert_response :success
+    assert_select "turbo-frame#geologic_unit_card [data-lookup-soil-summary]" do
+      assert_includes response.body, "Kitsap"
+      assert_includes response.body, "38% clay"
+      assert_includes response.body, "Fizz Risk"
+    end
+  end
+
+  test "POST /samples attaches cached SoilProfile and PATCH clears stale soil_profile on relocation" do
+    soil = SoilProfile.create!(
+      mukey: "468555",
+      map_unit_name: "Tacoma Glacial Till",
+      component_name: "Everett",
+      component_percent: 80,
+      max_clay_pct: 28.0,
+      latitude: 47.2529,
+      longitude: -122.4443,
+      horizons: [
+        { "hzname" => "Bt", "top_cm" => 25, "bottom_cm" => 75, "clay_pct" => 28.0, "plasticity_index" => 15.0, "caco3_pct" => 0.0 }
+      ]
+    )
+
+    post samples_path, params: {
+      user_sample: {
+        title: "Cached Soil Clay",
+        material_category: "wild_clay",
+        latitude: "47.2529",
+        longitude: "-122.4443"
+      }
+    }
+
+    sample = UserSample.order(:id).last
+    assert_equal soil.id, sample.soil_profile_id
+
+    stub_request(:get, "https://macrostrat.org/api/v2/geologic_units/map")
+      .with(query: hash_including("lat" => "10.0", "lng" => "-150.0", "format" => "geojson"))
+      .to_return(
+        status: 200,
+        body: { type: "FeatureCollection", features: [] }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    patch sample_path(sample), params: {
+      user_sample: {
+        title: "Cached Soil Clay",
+        material_category: "wild_clay",
+        latitude: "10.0",
+        longitude: "-150.0"
+      }
+    }
+
+    assert_redirected_to sample_path(sample)
+    assert_nil sample.reload.soil_profile_id
   end
 
   test "PATCH /samples/:id updates sample metadata and recalculates assay" do

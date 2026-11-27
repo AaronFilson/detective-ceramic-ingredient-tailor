@@ -1,0 +1,293 @@
+<% chart = stull_chart_model(
+  assay_result: assay_result,
+  heuristic_assay: local_assigns[:heuristic_assay],
+  verified_lab_assay: local_assigns[:verified_lab_assay],
+  baseline_assay: local_assigns[:baseline_assay]
+) %>
+
+<% if chart.present? %>
+  <% geom = chart[:geometry] %>
+  <% active = chart[:active_point] %>
+  <% comparison = chart[:comparison_point] %>
+  <% shift = chart[:shift_vector] %>
+  <% active_zone = active[:zone] %>
+  <% clip_id = "stull-plot-clip-#{assay_result.respond_to?(:id) && assay_result.id ? assay_result.id : 'draft'}" %>
+  <% arrow_id = "stull-shift-arrow-#{assay_result.respond_to?(:id) && assay_result.id ? assay_result.id : 'draft'}" %>
+
+  <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3" data-stull-chart-panel>
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+            Stull Melt Chart (Al₂O₃ vs SiO₂ UMF)
+          </h3>
+          <span
+            class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border <%= active_zone[:badge_classes] %>"
+            data-stull-zone="<%= active_zone[:zone] %>"
+          >
+            <%= active_zone[:label] %>
+          </span>
+          <% if chart[:bounds][:expanded] %>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-stone-200/80 text-stone-700">
+              Auto-scaled
+            </span>
+          <% end %>
+        </div>
+        <p class="text-[11px] text-stone-600 mt-0.5">
+          <%= active_zone[:description] %>
+        </p>
+      </div>
+
+      <div class="text-right font-mono text-[11px] text-stone-700 tabular-nums shrink-0">
+        <div>
+          Al₂O₃ <strong class="text-stone-950"><%= format("%.3f", active[:al2o3]) %></strong> ·
+          SiO₂ <strong class="text-stone-950"><%= format("%.3f", active[:sio2]) %></strong>
+        </div>
+        <% if shift.present? %>
+          <div class="text-[10px] text-[#1E4E79]">
+            Shift ΔAl <%= format("%+.3f", shift[:delta_al2o3]) %> · ΔSi <%= format("%+.3f", shift[:delta_sio2]) %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-[#E8DFD0] bg-white p-2 overflow-hidden">
+      <svg
+        data-stull-chart
+        viewBox="0 0 <%= geom[:width].to_i %> <%= geom[:height].to_i %>"
+        role="img"
+        aria-label="Stull Chart plotting UMF Al2O3 <%= format('%.3f', active[:al2o3]) %> against SiO2 <%= format('%.3f', active[:sio2]) %> in the <%= active_zone[:label] %> zone"
+        class="w-full h-auto block select-none"
+      >
+        <title>Stull Melt Chart — <%= stull_point_tooltip(active) %></title>
+        <desc>Ceramic Stull phase chart plotting Unity Molecular Formula Al2O3 on the horizontal axis and SiO2 on the vertical axis across Unfused, Matte, Satin/Gloss, Crazing/High-Silica, and Underfired/High-Flux zones.</desc>
+
+        <defs>
+          <clipPath id="<%= clip_id %>">
+            <rect
+              x="<%= geom[:left] %>"
+              y="<%= geom[:top] %>"
+              width="<%= geom[:plot_width] %>"
+              height="<%= geom[:plot_height] %>"
+            />
+          </clipPath>
+          <marker
+            id="<%= arrow_id %>"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#1E4E79" />
+          </marker>
+        </defs>
+
+        <%# Shaded Stull Melt Zones %>
+        <g clip-path="url(#<%= clip_id %>)">
+          <% chart[:zones].each do |zone| %>
+            <polygon
+              points="<%= zone[:points] %>"
+              fill="<%= zone[:fill] %>"
+              fill-opacity="<%= zone[:fill_opacity] %>"
+              <% if zone[:dashed_border] %>
+                stroke="#C85A32"
+                stroke-width="1"
+                stroke-dasharray="3 2"
+              <% end %>
+            />
+          <% end %>
+
+          <%# Subtle Gridlines %>
+          <% chart[:x_ticks].each do |tick| %>
+            <% gx = stull_x(tick[:value], geom) %>
+            <line
+              x1="<%= gx %>" y1="<%= geom[:top] %>"
+              x2="<%= gx %>" y2="<%= geom[:bottom] %>"
+              stroke="#78716C" stroke-opacity="0.14" stroke-width="1"
+            />
+          <% end %>
+          <% chart[:y_ticks].each do |tick| %>
+            <% gy = stull_y(tick[:value], geom) %>
+            <line
+              x1="<%= geom[:left] %>" y1="<%= gy %>"
+              x2="<%= geom[:right] %>" y2="<%= gy %>"
+              stroke="#78716C" stroke-opacity="0.14" stroke-width="1"
+            />
+          <% end %>
+
+          <%# Si:Al Molar Ratio Guide Rays %>
+          <% chart[:ratio_guides].each do |guide| %>
+            <line
+              x1="<%= guide[:x1] %>" y1="<%= guide[:y1] %>"
+              x2="<%= guide[:x2] %>" y2="<%= guide[:y2] %>"
+              stroke="#57534E" stroke-opacity="0.38" stroke-width="1" stroke-dasharray="4 3"
+            />
+            <text
+              x="<%= guide[:label_x] %>"
+              y="<%= guide[:label_y] %>"
+              fill="#57534E"
+              font-size="9"
+              font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+              text-anchor="middle"
+            ><%= guide[:label] %></text>
+          <% end %>
+
+          <%# Zone Labels %>
+          <% chart[:zones].each do |zone| %>
+            <text
+              x="<%= zone[:label_x] %>"
+              y="<%= zone[:label_y] %>"
+              fill="<%= zone[:text_color] %>"
+              font-size="10"
+              font-weight="700"
+              font-family="ui-sans-serif, system-ui, sans-serif"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              opacity="0.88"
+            ><%= zone[:short_label] %></text>
+          <% end %>
+
+          <%# Shift Vector Arrow (Heuristic -> Verified Lab or Baseline -> Active) %>
+          <% if shift.present? && shift[:distance] > 0.0005 %>
+            <line
+              data-stull-shift-vector
+              x1="<%= shift[:x1] %>"
+              y1="<%= shift[:y1] %>"
+              x2="<%= shift[:x2] %>"
+              y2="<%= shift[:y2] %>"
+              stroke="#1E4E79"
+              stroke-width="2"
+              stroke-dasharray="5 3"
+              marker-end="url(#<%= arrow_id %>)"
+            >
+              <title>Shift vector: <%= shift[:from][:label] %> → <%= shift[:to][:label] %> (ΔAl2O3 <%= format('%+.3f', shift[:delta_al2o3]) %>, ΔSiO2 <%= format('%+.3f', shift[:delta_sio2]) %>)</title>
+            </line>
+          <% end %>
+        </g>
+
+        <%# Plot Frame Border %>
+        <rect
+          x="<%= geom[:left] %>"
+          y="<%= geom[:top] %>"
+          width="<%= geom[:plot_width] %>"
+          height="<%= geom[:plot_height] %>"
+          fill="none"
+          stroke="#A8A29E"
+          stroke-width="1.2"
+        />
+
+        <%# X-Axis Ticks & Label (Al2O3) %>
+        <% chart[:x_ticks].each do |tick| %>
+          <% tx = stull_x(tick[:value], geom) %>
+          <line x1="<%= tx %>" y1="<%= geom[:bottom] %>" x2="<%= tx %>" y2="<%= geom[:bottom] + 4 %>" stroke="#78716C" stroke-width="1" />
+          <text
+            x="<%= tx %>"
+            y="<%= geom[:bottom] + 16 %>"
+            fill="#57534E"
+            font-size="10"
+            font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            text-anchor="middle"
+          ><%= tick[:label] %></text>
+        <% end %>
+        <text
+          x="<%= geom[:left] + geom[:plot_width] / 2.0 %>"
+          y="<%= geom[:height] - 7 %>"
+          fill="#292524"
+          font-size="11"
+          font-weight="700"
+          font-family="ui-sans-serif, system-ui, sans-serif"
+          text-anchor="middle"
+        >Al₂O₃ (UMF moles)</text>
+
+        <%# Y-Axis Ticks & Label (SiO2) %>
+        <% chart[:y_ticks].each do |tick| %>
+          <% ty = stull_y(tick[:value], geom) %>
+          <line x1="<%= geom[:left] - 4 %>" y1="<%= ty %>" x2="<%= geom[:left] %>" y2="<%= ty %>" stroke="#78716C" stroke-width="1" />
+          <text
+            x="<%= geom[:left] - 8 %>"
+            y="<%= ty + 3 %>"
+            fill="#57534E"
+            font-size="10"
+            font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            text-anchor="end"
+          ><%= tick[:label] %></text>
+        <% end %>
+        <text
+          x="15"
+          y="<%= geom[:top] + geom[:plot_height] / 2.0 %>"
+          fill="#292524"
+          font-size="11"
+          font-weight="700"
+          font-family="ui-sans-serif, system-ui, sans-serif"
+          text-anchor="middle"
+          transform="rotate(-90 15 <%= geom[:top] + geom[:plot_height] / 2.0 %>)"
+        >SiO₂ (UMF moles)</text>
+
+        <%# Optional Comparison / Heuristic Baseline Marker %>
+        <% if comparison.present? %>
+          <g data-stull-comparison-point>
+            <circle
+              cx="<%= comparison[:cx] %>"
+              cy="<%= comparison[:cy] %>"
+              r="5.5"
+              fill="#FFFFFF"
+              stroke="#1E4E79"
+              stroke-width="2.2"
+            >
+              <title><%= stull_point_tooltip(comparison) %></title>
+            </circle>
+          </g>
+        <% end %>
+
+        <%# Active Estimate Marker (#B84A27 terracotta dot + crisp white halo) %>
+        <g data-stull-active-point>
+          <circle
+            cx="<%= active[:cx] %>"
+            cy="<%= active[:cy] %>"
+            r="10"
+            fill="#B84A27"
+            fill-opacity="0.18"
+          />
+          <circle
+            cx="<%= active[:cx] %>"
+            cy="<%= active[:cy] %>"
+            r="6.2"
+            fill="#B84A27"
+            stroke="#FFFFFF"
+            stroke-width="2.4"
+          >
+            <title><%= stull_point_tooltip(active) %></title>
+          </circle>
+        </g>
+      </svg>
+    </div>
+
+    <%# Crisp Chart Legend %>
+    <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-600">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="inline-flex items-center gap-1.5 font-medium text-stone-800">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#B84A27] ring-2 ring-white shadow-sm"></span>
+          <span><%= active[:label] %></span>
+        </span>
+        <% if comparison.present? %>
+          <span class="inline-flex items-center gap-1.5 font-medium text-stone-700">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-white border-2 border-[#1E4E79]"></span>
+            <span><%= comparison[:label] %></span>
+          </span>
+        <% end %>
+        <% if shift.present? && shift[:distance] > 0.0005 %>
+          <span class="inline-flex items-center gap-1.5 text-[#1E4E79] font-medium">
+            <span class="inline-block w-4 border-t-2 border-dashed border-[#1E4E79]"></span>
+            <span><%= shift[:from][:label] %> → <%= shift[:to][:label] %></span>
+          </span>
+        <% end %>
+      </div>
+
+      <span class="font-mono text-[10px] text-stone-500">
+        Hover markers for exact UMF · Dashed rays show Si:Al molar ratios
+      </span>
+    </div>
+  </div>
+<% end %>

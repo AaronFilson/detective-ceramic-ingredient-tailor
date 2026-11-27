@@ -91,5 +91,28 @@
         </div>
       </div>
     <% end %>
+
+    <% lookup_soil = local_assigns[:soil_profile] %>
+    <% if lookup_soil.present? %>
+      <% best_hz = lookup_soil.clay_rich_horizon %>
+      <div class="mt-3 pt-2.5 border-t border-[#1E4E79]/15 flex flex-wrap items-center justify-between gap-2 text-xs" data-lookup-soil-summary>
+        <div class="flex items-center gap-2 flex-wrap text-stone-800">
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-900/10 text-amber-950 border border-amber-800/20">
+            USDA Soil
+          </span>
+          <span class="font-semibold"><%= lookup_soil.summary_label %></span>
+          <% if best_hz.present? && best_hz["plasticity_index"].present? %>
+            <span class="font-mono text-[11px] text-stone-600">
+              PI <%= number_with_precision(best_hz["plasticity_index"].to_f, precision: 1, strip_insignificant_zeros: true) %>
+            </span>
+          <% end %>
+        </div>
+        <% if lookup_soil.max_caco3_pct.to_f >= 2.0 %>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-950 border border-amber-300">
+            CaCO₃ ≥ 2% (Fizz Risk)
+          </span>
+        <% end %>
+      </div>
+    <% end %>
   </div>
 <% end %>
