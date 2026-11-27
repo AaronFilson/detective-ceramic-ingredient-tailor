@@ -1,0 +1,49 @@
+<div id="field_observation_history">
+  <% observations = sample.field_observations.order(created_at: :desc, id: :desc).limit(4) %>
+  <% if observations.any? %>
+    <div class="pt-3 border-t border-[#E8DFD0] space-y-2">
+      <div class="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+        Recent Diagnostic Log (<%= sample.field_observations.count %>)
+      </div>
+      <div class="space-y-1.5">
+        <% observations.each do |obs| %>
+          <div class="rounded-lg bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-1.5 text-[11px] text-stone-700 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-semibold">
+                Fizz: <%= obs.vinegar_fizz %>
+              </span>
+              <% if obs.slaking_behavior.present? %>
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                  Slake: <%= obs.slaking_behavior.humanize %>
+                </span>
+              <% end %>
+              <% if obs.plasticity.present? %>
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                  Plasticity: <%= obs.plasticity.humanize %>
+                </span>
+              <% end %>
+              <% if obs.fired_color.present? || obs.raw_color.present? %>
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200">
+                  Color: <%= obs.fired_color.presence || obs.raw_color %>
+                </span>
+              <% end %>
+              <% if obs.fired_cone.present? %>
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                  Cone <%= obs.fired_cone %>
+                </span>
+              <% end %>
+              <% if obs.shrinkage_percent.present? %>
+                <span class="px-1.5 py-0.5 rounded bg-white border border-stone-200 font-mono">
+                  <%= format("%.1f%%", obs.shrinkage_percent.to_f) %> shrink
+                </span>
+              <% end %>
+            </div>
+            <span class="font-mono text-[10px] text-stone-400">
+              #<%= obs.id %>
+            </span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

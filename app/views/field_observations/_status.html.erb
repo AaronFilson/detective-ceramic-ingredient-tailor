@@ -1,0 +1,23 @@
+<div id="field_observation_status">
+  <% if field_observation&.persisted? %>
+    <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-600"></span>
+        <span class="font-semibold">Latest observation active:</span>
+        <span>Vinegar fizz <strong><%= field_observation.vinegar_fizz %></strong></span>
+        <% if field_observation.plasticity.present? %>
+          <span>· Plasticity <strong><%= field_observation.plasticity.humanize.downcase %></strong></span>
+        <% end %>
+        <% if field_observation.fired_cone.present? %>
+          <span>· Cone <strong><%= field_observation.fired_cone %></strong></span>
+        <% end %>
+        <% if field_observation.melt_state.present? %>
+          <span>(<strong><%= field_observation.melt_state.humanize.downcase %></strong>)</span>
+        <% end %>
+      </div>
+      <span class="font-mono text-[11px] text-emerald-800">
+        Logged <%= field_observation.created_at.strftime("%H:%M:%S") %>
+      </span>
+    </div>
+  <% end %>
+</div>

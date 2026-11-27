@@ -1,0 +1,297 @@
+<% content_for :title, @sample.persisted? ? "#{@sample.title} — TerraAssay Studio" : "New Sample — TerraAssay Studio" %>
+
+<div
+  class="flex flex-col flex-1 min-h-0 lg:h-screen"
+  data-controller="map-picker"
+  data-map-picker-lat-value="<%= @map_lat %>"
+  data-map-picker-lng-value="<%= @map_lng %>"
+  data-map-picker-zoom-value="<%= @map_zoom %>"
+  data-map-picker-lookup-url-value="<%= geologic_lookup_samples_path %>"
+  data-map-picker-sample-id-value="<%= @sample.persisted? ? @sample.id : "" %>"
+  data-map-picker-macrostrat-opacity-value="0.65"
+  data-map-picker-macrostrat-visible-value="true"
+  data-map-picker-reference-assays-value="<%= @reference_assays_payload.to_json %>"
+  data-map-picker-boundary-geojson-value="<%= geologic_unit_boundary_geojson(@geologic_unit).to_s %>"
+  data-map-picker-boundary-color-value="<%= geologic_unit_swatch_color(@geologic_unit) %>"
+  data-map-picker-boundary-label-value="<%= @geologic_unit&.name.to_s %>"
+>
+  <%# Top Studio Header Bar %>
+  <header class="shrink-0 bg-[#1F1B18] text-[#FAF7F2] border-b border-stone-800 px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 z-20">
+    <div class="flex items-center gap-3 min-w-0">
+      <%= link_to root_path, class: "flex items-center gap-2.5 group focus:outline-none" do %>
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#B84A27] text-[#FAF7F2] shadow-inner font-mono text-xs font-bold tracking-tight group-hover:bg-[#C85A32] transition-colors">
+          SiO₂
+        </span>
+        <div class="leading-tight">
+          <div class="font-semibold tracking-tight text-sm sm:text-base text-[#FAF7F2]">
+            TerraAssay Studio
+          </div>
+          <div class="text-[11px] text-stone-400 hidden sm:block">
+            Ceramic Material Assay &amp; Geological Inference Workbench
+          </div>
+        </div>
+      <% end %>
+    </div>
+
+    <%# Saved Samples Switcher (Dropdown + Quick Pills) %>
+    <div class="flex items-center gap-2.5 flex-wrap">
+      <% if @saved_samples.any? %>
+        <div class="flex items-center gap-2">
+          <label for="saved_sample_switcher" class="text-[11px] uppercase tracking-wider text-stone-400 font-medium hidden md:inline">
+            Sample
+          </label>
+          <select
+            id="saved_sample_switcher"
+            aria-label="Switch saved sample"
+            data-action="change->map-picker#navigateSample"
+            class="bg-stone-800/90 border border-stone-700 text-[#FAF7F2] text-xs sm:text-sm rounded-lg px-2.5 py-1.5 max-w-[220px] truncate focus:outline-none focus:ring-2 focus:ring-[#C85A32]"
+          >
+            <% unless @sample.persisted? %>
+              <option value="<%= new_sample_path %>" selected>Unsaved Draft Sample…</option>
+            <% end %>
+            <% @saved_samples.each do |saved| %>
+              <option value="<%= sample_path(saved) %>" <%= "selected" if @sample.persisted? && @sample.id == saved.id %>>
+                <%= saved.title %> (<%= material_category_label(saved.material_category) %>)
+              </option>
+            <% end %>
+          </select>
+        </div>
+
+        <div class="hidden xl:flex items-center gap-1.5">
+          <% @saved_samples.first(3).each do |saved| %>
+            <% active = @sample.persisted? && @sample.id == saved.id %>
+            <%= link_to saved.title.truncate(22),
+              sample_path(saved),
+              class: "px-2.5 py-1 rounded-full text-xs font-medium border transition-colors #{active ? 'bg-[#FAF7F2] text-stone-900 border-[#FAF7F2]' : 'bg-stone-800/60 text-stone-300 border-stone-700 hover:bg-stone-700/80 hover:text-white'}" %>
+          <% end %>
+        </div>
+      <% end %>
+
+      <%= link_to new_sample_path,
+        class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#B84A27] hover:bg-[#C85A32] text-[#FAF7F2] text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer" do %>
+        <span aria-hidden="true" class="text-base leading-none">+</span>
+        <span>New Sample</span>
+      <% end %>
+    </div>
+  </header>
+
+  <% if flash[:notice].present? || flash[:alert].present? %>
+    <div class="shrink-0 px-4 py-2 text-xs sm:text-sm border-b <%= flash[:alert].present? ? 'bg-red-50 text-red-900 border-red-200' : 'bg-emerald-50 text-emerald-950 border-emerald-200' %> flex items-center justify-between">
+      <span><%= flash[:alert] || flash[:notice] %></span>
+    </div>
+  <% end %>
+
+  <%# Full-Viewport Responsive Split-Screen Workbench %>
+  <main class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12">
+    <%# LEFT PANE: Interactive Leaflet Map + Macrostrat Overlay %>
+    <section
+      aria-label="Geological Map Picker"
+      class="lg:col-span-5 xl:col-span-6 relative flex flex-col h-[460px] sm:h-[520px] lg:h-full min-h-0 border-b lg:border-b-0 lg:border-r border-[#D6C7B2] bg-[#E8E1D5]"
+    >
+      <%# Floating Top-Left Macrostrat & Layer Controls %>
+      <div class="absolute top-3 left-3 z-[400] max-w-[270px] rounded-xl bg-[#FCFBF8]/95 backdrop-blur border border-[#D6C7B2] shadow-md px-3.5 py-2.5 text-xs space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          <label class="inline-flex items-center gap-2 font-semibold text-stone-800 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked
+              data-map-picker-target="macrostratToggle"
+              data-action="change->map-picker#toggleMacrostrat"
+              class="rounded border-stone-400 text-[#1E4E79] focus:ring-[#1E4E79]"
+            >
+            <span>Macrostrat Geology</span>
+          </label>
+          <span
+            data-map-picker-target="opacityReadout"
+            class="font-mono text-[11px] font-semibold text-[#1E4E79] tabular-nums"
+          >
+            65%
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-wider text-stone-500">Opacity</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value="0.65"
+            aria-label="Macrostrat overlay opacity"
+            data-map-picker-target="macrostratOpacity"
+            data-action="input->map-picker#updateMacrostratOpacity"
+            class="w-full h-1.5 bg-stone-200 rounded-lg accent-[#1E4E79] cursor-pointer"
+          >
+        </div>
+
+        <div class="pt-1.5 border-t border-stone-200/80 flex items-center justify-between gap-2">
+          <label class="inline-flex items-center gap-2 text-stone-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked
+              data-map-picker-target="referenceToggle"
+              data-action="change->map-picker#toggleReferenceAssays"
+              class="rounded border-stone-400 text-[#B84A27] focus:ring-[#B84A27]"
+            >
+            <span>Reference Assays (<%= @reference_assays_payload.size %>)</span>
+          </label>
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#1E4E79]/80 border border-white shadow-sm" title="USGS / EarthChem Reference Assays"></span>
+        </div>
+      </div>
+
+      <%# Floating Top-Right Coordinates Pill %>
+      <div class="absolute top-3 right-3 z-[400] rounded-xl bg-[#1F1B18]/90 backdrop-blur text-[#FAF7F2] px-3 py-2 shadow-md border border-stone-700/80 text-right">
+        <div class="text-[10px] uppercase tracking-widest text-stone-400">Active Pin · Click Map</div>
+        <div
+          data-map-picker-target="coordsDisplay"
+          class="font-mono text-xs font-semibold tabular-nums text-amber-200"
+        >
+          <%= format("%.4f, %.4f", @map_lat.to_f, @map_lng.to_f) %>
+        </div>
+      </div>
+
+      <%# Leaflet Map Canvas %>
+      <div
+        data-map-picker-target="canvas"
+        class="flex-1 w-full h-full min-h-0"
+      ></div>
+
+      <%# Quick Test-Location Buttons Dock %>
+      <div class="shrink-0 bg-[#FCFBF8] border-t border-[#D6C7B2] px-3.5 py-2.5">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-[10px] uppercase tracking-wider font-semibold text-stone-500 mr-1">
+            Quick PNW Sites:
+          </span>
+          <% @quick_locations.each do |loc| %>
+            <button
+              type="button"
+              data-action="click->map-picker#jumpToLocation"
+              data-map-picker-lat-param="<%= loc[:lat] %>"
+              data-map-picker-lng-param="<%= loc[:lng] %>"
+              data-map-picker-zoom-param="<%= loc[:zoom] %>"
+              data-map-picker-label-param="<%= loc[:label] %>"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#D6C7B2] bg-[#FAF7F2] hover:bg-[#B84A27] hover:text-white hover:border-[#B84A27] text-stone-800 text-xs font-medium transition-colors cursor-pointer group"
+            >
+              <span><%= loc[:label] %></span>
+              <span class="font-mono text-[10px] text-stone-500 group-hover:text-amber-100 hidden sm:inline">
+                (<%= format("%.2f, %.2f", loc[:lat], loc[:lng]) %>)
+              </span>
+            </button>
+          <% end %>
+        </div>
+      </div>
+    </section>
+
+    <%# RIGHT PANE: 3-Step Ceramic Studio Diagnostic Workbench %>
+    <section
+      aria-label="3-Step Diagnostic Workbench"
+      class="lg:col-span-7 xl:col-span-6 lg:h-full lg:overflow-y-auto studio-scroll bg-[#F5F0E6]"
+    >
+      <div class="max-w-3xl mx-auto p-4 sm:p-6 space-y-6 pb-12">
+        <%# Step Progress Strip %>
+        <nav aria-label="Workbench steps" class="grid grid-cols-3 gap-2 text-xs">
+          <a href="#step-1-location" class="flex items-center gap-2 rounded-xl bg-[#FCFBF8] border border-[#D6C7B2] px-3 py-2 hover:border-[#B84A27] transition-colors">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#B84A27] text-white font-mono text-[10px] font-bold">1</span>
+            <span class="font-semibold text-stone-800 truncate">Location &amp; Unit</span>
+          </a>
+          <a href="#step-2-diagnostics" class="flex items-center gap-2 rounded-xl bg-[#FCFBF8] border border-[#D6C7B2] px-3 py-2 hover:border-[#B84A27] transition-colors">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full <%= @sample.persisted? ? 'bg-[#B84A27] text-white' : 'bg-stone-200 text-stone-600' %> font-mono text-[10px] font-bold">2</span>
+            <span class="font-semibold text-stone-800 truncate">Field Tests</span>
+          </a>
+          <a href="#step-3-assay" class="flex items-center gap-2 rounded-xl bg-[#FCFBF8] border border-[#D6C7B2] px-3 py-2 hover:border-[#1E4E79] transition-colors">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full <%= @assay_result.present? ? 'bg-[#1E4E79] text-white' : 'bg-stone-200 text-stone-600' %> font-mono text-[10px] font-bold">3</span>
+            <span class="font-semibold text-stone-800 truncate">Assay &amp; UMF</span>
+          </a>
+        </nav>
+
+        <%# STEP 1: Location & Geologic Unit Card %>
+        <article id="step-1-location" class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
+          <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#B84A27]/12 text-[#963B1D] border border-[#B84A27]/20">
+                STEP 01
+              </span>
+              <h2 class="text-sm sm:text-base font-bold text-stone-900 tracking-tight">
+                Sample Provenance &amp; Geologic Unit
+              </h2>
+            </div>
+            <% if @sample.persisted? %>
+              <span class="font-mono text-[11px] text-stone-500">Sample #<%= @sample.id %></span>
+            <% else %>
+              <span class="text-xs font-medium text-[#B84A27]">Unsaved Draft</span>
+            <% end %>
+          </div>
+
+          <div class="p-5 space-y-5">
+            <%= render "samples/geologic_unit_card",
+              geologic_unit: @geologic_unit,
+              lat: @map_lat,
+              lng: @map_lng,
+              sample_id: @sample.persisted? ? @sample.id : nil,
+              lookup_performed: @geologic_unit.present?,
+              nearby_assay_count: @reference_assays_payload.size %>
+
+            <%= render "samples/sample_form", sample: @sample %>
+          </div>
+        </article>
+
+        <%# STEP 2: Field Observation Diagnostic Checklist %>
+        <article id="step-2-diagnostics" class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
+          <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#B84A27]/12 text-[#963B1D] border border-[#B84A27]/20">
+                STEP 02
+              </span>
+              <h2 class="text-sm sm:text-base font-bold text-stone-900 tracking-tight">
+                Field Observation Diagnostic Checklist
+              </h2>
+            </div>
+            <span class="text-[11px] text-stone-500 hidden sm:inline">Live Turbo Stream Recalculation</span>
+          </div>
+
+          <div class="p-5 space-y-4">
+            <% if @sample.persisted? %>
+              <%= render "field_observations/status",
+                sample: @sample,
+                field_observation: @sample.latest_field_observation %>
+
+              <%= render "field_observations/form",
+                sample: @sample,
+                field_observation: @field_observation %>
+
+              <%= render "field_observations/history", sample: @sample %>
+            <% else %>
+              <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-5 text-center space-y-2">
+                <p class="text-sm font-semibold text-stone-800">
+                  Save your sample in Step 1 to run physical field diagnostics
+                </p>
+                <p class="text-xs text-stone-600 max-w-md mx-auto">
+                  Drop a pin on the map, enter a title, and click <strong>Save &amp; Run Baseline Assay</strong>. Then log vinegar fizz, slaking, plasticity, and test-tile firing observations to refine the oxide estimate live.
+                </p>
+              </div>
+            <% end %>
+          </div>
+        </article>
+
+        <%# STEP 3: Live Chemical Estimate, UMF & Reasoning %>
+        <article id="step-3-assay" class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
+          <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#1E4E79]/12 text-[#1E4E79] border border-[#1E4E79]/20">
+                STEP 03
+              </span>
+              <h2 class="text-sm sm:text-base font-bold text-stone-900 tracking-tight">
+                Live Chemical Assay, UMF &amp; Interop Export
+              </h2>
+            </div>
+            <span class="font-mono text-[11px] text-stone-500">100.0% Wt Basis</span>
+          </div>
+
+          <div class="p-5">
+            <%= render "samples/assay_estimate_panel", sample: @sample, assay_result: @assay_result %>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</div>
