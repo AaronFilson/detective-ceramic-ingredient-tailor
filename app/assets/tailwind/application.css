@@ -1,1 +1,77 @@
 @import "tailwindcss";
+
+@theme {
+  --color-clay-50: #FAF7F2;
+  --color-clay-100: #F5F0E6;
+  --color-clay-200: #E8DFD0;
+  --color-clay-300: #D6C7B2;
+  --color-terracotta-500: #C85A32;
+  --color-terracotta-600: #B84A27;
+  --color-terracotta-700: #963B1D;
+  --color-cobalt-600: #1E4E79;
+  --color-cobalt-700: #163B5C;
+  --color-celadon-600: #2F6F5E;
+}
+
+/* Leaflet studio overrides so controls sit cleanly inside our split-screen pane */
+.leaflet-container {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: #E8E1D5;
+  z-index: 1;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 0.625rem;
+  border: 1px solid #D6C7B2;
+  background-color: #FCFBF8;
+  color: #1C1917;
+  box-shadow: 0 10px 25px -5px rgba(28, 25, 23, 0.16);
+}
+
+.leaflet-popup-tip {
+  background-color: #FCFBF8;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px;
+  background: rgba(252, 251, 248, 0.85) !important;
+  color: #57534E !important;
+}
+
+/* Custom terracotta pin marker for active sample */
+.studio-sample-pin {
+  background: transparent;
+  border: none;
+}
+
+.studio-sample-pin__dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #B84A27;
+  border: 3px solid #FCFBF8;
+  box-shadow: 0 3px 10px rgba(28, 25, 23, 0.45), 0 0 0 3px rgba(184, 74, 39, 0.28);
+  transition: transform 150ms ease;
+}
+
+.studio-sample-pin__dot:hover {
+  transform: scale(1.12);
+}
+
+/* Subtle studio scrollbar for the right-hand field notebook */
+.studio-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.studio-scroll::-webkit-scrollbar-track {
+  background: #EFE9DC;
+}
+
+.studio-scroll::-webkit-scrollbar-thumb {
+  background: #CFC2AE;
+  border-radius: 9999px;
+}
+
+.studio-scroll::-webkit-scrollbar-thumb:hover {
+  background: #B6A58C;
+}

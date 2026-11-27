@@ -1,0 +1,312 @@
+<div id="assay_estimate_panel" class="space-y-6">
+  <% if assay_result.present? && sample.persisted? %>
+    <% oxides = assay_result.oxides || {} %>
+    <% ranges = assay_result.oxide_ranges || {} %>
+    <% umf = assay_result.umf_formula || {} %>
+    <% reasoning_log = Array(assay_result.reasoning_log) %>
+    <% source_badge = source_type_badge(assay_result.source_type) %>
+    <% confidence = confidence_presentation(assay_result.confidence_score) %>
+
+    <%# Top Summary Strip: Source Pill + Confidence Meter %>
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E8DFD0]">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border <%= source_badge[:classes] %>">
+          <%= source_badge[:label] %>
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border <%= confidence[:badge] %>">
+          <span class="w-2 h-2 rounded-full <%= confidence[:dot] %>"></span>
+          <span><%= confidence[:pct] %>% Confidence</span>
+          <span class="font-normal opacity-75">(<%= confidence[:tier] %>)</span>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <div class="w-24 h-2 rounded-full bg-stone-200 overflow-hidden" aria-hidden="true">
+          <div class="h-full rounded-full <%= confidence[:bar] %> transition-all" style="width: <%= confidence[:pct] %>%"></div>
+        </div>
+        <span class="text-[11px] font-mono text-stone-500">
+          Updated <%= assay_result.updated_at.strftime("%H:%M:%S") %>
+        </span>
+      </div>
+    </div>
+
+    <%# UMF Stoichiometry Readout + Hero SiO2 : Al2O3 Ratio Card %>
+    <% fluxes = umf["fluxes"] || {} %>
+    <% intermediates = umf["intermediates"] || {} %>
+    <% glass_formers = umf["glass_formers"] || {} %>
+    <% si_al_ratio = umf["si_al_ratio"] %>
+
+    <div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-600">
+          Unity Molecular Formula (Seger UMF)
+        </h3>
+        <div class="flex items-center gap-3 font-mono text-[11px] text-stone-600 tabular-nums">
+          <% if umf["equivalent_weight"].present? %>
+            <span>Eq. Wt: <strong class="text-stone-900"><%= format("%.2f", umf["equivalent_weight"].to_f) %></strong></span>
+          <% end %>
+          <% if umf["formula_weight"].present? %>
+            <span>F.W.: <strong class="text-stone-900"><%= format("%.2f", umf["formula_weight"].to_f) %></strong></span>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <%# Prominent SiO2 : Al2O3 Ratio Card %>
+        <div class="md:col-span-4 rounded-xl bg-[#1E4E79] text-[#FAF7F2] p-4 flex flex-col justify-between shadow-sm">
+          <div>
+            <div class="text-[10px] uppercase tracking-widest text-sky-200 font-semibold">
+              SiO2 : Al2O3 Molar Ratio
+            </div>
+            <div class="mt-1.5 font-mono text-3xl font-bold tabular-nums tracking-tight">
+              <%= si_al_ratio.present? ? "#{format('%.2f', si_al_ratio.to_f)} : 1" : "—" %>
+            </div>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-white/15 text-[11px] text-sky-100 leading-snug">
+            <%= si_al_interpretation(si_al_ratio) %>
+          </div>
+        </div>
+
+        <%# RO + R2O Fluxes / R2O3 Intermediates / RO2 Glass Formers %>
+        <div class="md:col-span-8 grid grid-cols-3 gap-2.5">
+          <%# Fluxes %>
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3 flex flex-col justify-between">
+            <div>
+              <div class="text-[10px] uppercase tracking-wider font-bold text-amber-900 border-b border-[#E8DFD0] pb-1.5 mb-2 flex items-center justify-between">
+                <span>RO + R2O</span>
+                <span class="font-mono"><%= format("%.2f", (umf["flux_total"] || 1.0).to_f) %></span>
+              </div>
+              <dl class="space-y-1 font-mono text-xs tabular-nums">
+                <% %w[CaO MgO Na2O K2O].each do |ox| %>
+                  <% val = fluxes[ox].to_f %>
+                  <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
+                    <dt><%= ox %></dt>
+                    <dd class="font-semibold"><%= format_umf_mol(val) %></dd>
+                  </div>
+                <% end %>
+              </dl>
+            </div>
+            <div class="mt-2 pt-1.5 border-t border-[#E8DFD0] text-[10px] font-mono text-stone-500 flex justify-between">
+              <span>R2O <%= format("%.2f", umf["r2o_total"].to_f) %></span>
+              <span>RO <%= format("%.2f", umf["ro_total"].to_f) %></span>
+            </div>
+          </div>
+
+          <%# Intermediates %>
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3">
+            <div class="text-[10px] uppercase tracking-wider font-bold text-[#963B1D] border-b border-[#E8DFD0] pb-1.5 mb-2">
+              R2O3 Intermed.
+            </div>
+            <dl class="space-y-1 font-mono text-xs tabular-nums">
+              <% %w[Al2O3 Fe2O3 MnO].each do |ox| %>
+                <% val = intermediates[ox].to_f %>
+                <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
+                  <dt><%= ox %></dt>
+                  <dd class="font-semibold"><%= format_umf_mol(val) %></dd>
+                </div>
+              <% end %>
+            </dl>
+          </div>
+
+          <%# Glass Formers %>
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3">
+            <div class="text-[10px] uppercase tracking-wider font-bold text-[#1E4E79] border-b border-[#E8DFD0] pb-1.5 mb-2">
+              RO2 Formers
+            </div>
+            <dl class="space-y-1 font-mono text-xs tabular-nums">
+              <% %w[SiO2 TiO2 P2O5].each do |ox| %>
+                <% val = glass_formers[ox].to_f %>
+                <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
+                  <dt><%= ox %></dt>
+                  <dd class="font-semibold"><%= format_umf_mol(val) %></dd>
+                </div>
+              <% end %>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <%# Oxide Breakdown Table %>
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-600">
+          Oxide Weight % Breakdown &amp; Uncertainty Ranges
+        </h3>
+        <span class="text-[11px] text-stone-500">Min · IQR · Est. Wt % · Max</span>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-[#D6C7B2] bg-white">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-[#FAF7F2] border-b border-[#E8DFD0] text-[10px] uppercase tracking-wider text-stone-500">
+              <th class="py-2.5 pl-3.5 pr-2 font-semibold">Oxide</th>
+              <th class="py-2.5 px-2 font-semibold text-right">Est. Wt %</th>
+              <th class="py-2.5 px-3 font-semibold w-48 sm:w-56">Min / Med / Max Range</th>
+              <th class="py-2.5 pl-2 pr-3.5 font-semibold text-right hidden sm:table-cell">Role</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100 text-xs">
+            <% CeramicOxides::KEYS.each do |oxide_key| %>
+              <% val = oxides[oxide_key].to_f %>
+              <% bar = oxide_range_bar(oxide_key, val, ranges) %>
+              <% role = oxide_role(oxide_key) %>
+              <tr class="hover:bg-[#FAF7F2]/80 transition-colors" data-oxide-row="<%= oxide_key %>">
+                <td class="py-2 pl-3.5 pr-2 font-mono font-bold text-stone-900">
+                  <%= oxide_key %>
+                </td>
+                <td class="py-2 px-2 font-mono font-semibold text-right tabular-nums text-stone-900" data-oxide-value="<%= oxide_key %>">
+                  <%= format_oxide_pct(val) %>
+                </td>
+                <td class="py-2 px-3">
+                  <div class="space-y-1">
+                    <div class="relative h-2 rounded-full bg-stone-100 overflow-hidden">
+                      <div
+                        class="absolute top-0.5 h-1 rounded-full bg-stone-300"
+                        style="left: <%= bar[:min_pct] %>%; width: <%= bar[:whisker_width] %>%;"
+                      ></div>
+                      <div
+                        class="absolute top-0 h-2 rounded-full bg-[#1E4E79]/35"
+                        style="left: <%= bar[:q1_pct] %>%; width: <%= bar[:iqr_width] %>%;"
+                      ></div>
+                      <div
+                        class="absolute top-0 h-2 w-1.5 -ml-0.5 rounded-full bg-[#B84A27]"
+                        style="left: <%= bar[:val_pct] %>%;"
+                      ></div>
+                    </div>
+                    <div class="flex justify-between font-mono text-[10px] text-stone-500 tabular-nums">
+                      <span><%= format("%.1f", bar[:min]) %></span>
+                      <span class="text-stone-600">med <%= format("%.1f", bar[:median]) %></span>
+                      <span><%= format("%.1f", bar[:max]) %></span>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-2 pl-2 pr-3.5 text-right hidden sm:table-cell">
+                  <span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium border <%= role[:badge] %>">
+                    <%= role[:label] %>
+                  </span>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+          <tfoot>
+            <tr class="bg-[#FAF7F2] border-t border-[#D6C7B2] font-mono text-xs font-bold text-stone-900">
+              <td class="py-2.5 pl-3.5 pr-2">Total Sum</td>
+              <td class="py-2.5 px-2 text-right tabular-nums">
+                <%= format("%.1f%%", CeramicOxides::KEYS.sum { |k| oxides[k].to_f }) %>
+              </td>
+              <td colspan="2" class="py-2.5 px-3 font-sans font-normal text-[11px] text-stone-500">
+                Normalized oxide analysis including LOI
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <%# Transparent Reasoning Log Badges %>
+    <div class="space-y-2.5">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-600">
+          Inference Reasoning Audit Trail
+        </h3>
+        <span class="font-mono text-[11px] text-stone-500">
+          <%= pluralize(reasoning_log.size, "rule") %> applied
+        </span>
+      </div>
+
+      <% if reasoning_log.any? %>
+        <ul class="space-y-2" data-reasoning-log>
+          <% reasoning_log.each do |entry| %>
+            <% item = classify_reasoning_entry(entry) %>
+            <li class="rounded-xl border border-[#E8DFD0] bg-[#FAF7F2] px-3.5 py-2.5 flex items-start gap-2.5 text-xs">
+              <span class="shrink-0 mt-0.5 px-2 py-0.5 rounded-md font-semibold text-[10px] border <%= item[:tag][:classes] %>">
+                <%= item[:tag][:label] %>
+              </span>
+              <span class="text-stone-800 leading-relaxed"><%= item[:text] %></span>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="text-xs text-stone-500 italic">No heuristic reasoning steps recorded for this assay.</p>
+      <% end %>
+    </div>
+
+    <%# Export & Interop Actions (Glazecalc + Glaze-Vault + API) %>
+    <div
+      class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3"
+      data-controller="clipboard"
+    >
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+            Studio Export &amp; Interoperability
+          </h3>
+          <p class="text-[11px] text-stone-500">
+            Ready for Glazecalc UMF calculators, Glaze-Vault archival backup, and MCP/API consumers.
+          </p>
+        </div>
+        <span
+          data-clipboard-target="feedback"
+          class="text-xs font-semibold text-emerald-800 hidden"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-action="click->clipboard#copyFromUrl"
+          data-clipboard-url-param="<%= export_glazecalc_path(sample) %>"
+          data-clipboard-default-label-param="Copy JSON for Glazecalc"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+        >
+          <span>Copy JSON for Glazecalc</span>
+        </button>
+
+        <%= link_to "Download Glazecalc JSON",
+          export_glazecalc_path(sample, download: true),
+          data: { turbo: false },
+          class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
+
+        <%= link_to "Download Glaze-Vault Archive",
+          export_glaze_vault_path(sample, download: true),
+          data: { turbo: false },
+          class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
+      </div>
+
+      <%# Read-only Copyable API URL Badge %>
+      <div class="pt-2 border-t border-[#E8DFD0] flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-[10px] uppercase tracking-wider font-bold text-stone-500 shrink-0">
+            API Endpoint
+          </span>
+          <code class="px-2.5 py-1 rounded-lg bg-white border border-stone-200 font-mono text-[11px] text-[#1E4E79] truncate select-all">
+            <%= api_material_path(sample) %>
+          </code>
+        </div>
+        <button
+          type="button"
+          data-action="click->clipboard#copyText"
+          data-clipboard-text-param="<%= api_material_path(sample) %>"
+          data-clipboard-full-url-param="true"
+          data-clipboard-default-label-param="Copy API URL"
+          class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-stone-200/80 hover:bg-stone-300 text-stone-800 transition-colors cursor-pointer"
+        >
+          Copy API URL
+        </button>
+      </div>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-6 text-center space-y-2">
+      <div class="font-mono text-xs uppercase tracking-widest text-stone-400">Awaiting Sample</div>
+      <p class="text-sm font-semibold text-stone-800">
+        No chemical assay generated yet
+      </p>
+      <p class="text-xs text-stone-600 max-w-md mx-auto">
+        Save a sample location in Step 1 to generate a PostGIS spatial baseline, oxide weight-% ranges, Seger UMF formula, and Glazecalc/Glaze-Vault export links.
+      </p>
+    </div>
+  <% end %>
+</div>

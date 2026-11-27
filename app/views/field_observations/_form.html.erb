@@ -1,0 +1,195 @@
+<div id="field_observation_form">
+  <%= form_with model: [ sample, field_observation ],
+    url: sample_field_observations_path(sample),
+    method: :post,
+    data: { turbo: true },
+    class: "space-y-5" do |f| %>
+
+    <% if field_observation.errors.any? %>
+      <div class="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-900">
+        <div class="font-semibold mb-1">Could not apply field observation:</div>
+        <ul class="list-disc pl-4 space-y-0.5">
+          <% field_observation.errors.full_messages.each do |msg| %>
+            <li><%= msg %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%# 1. Vinegar Acid Test (CaCO3 / Carbonates) %>
+    <fieldset class="space-y-2">
+      <div class="flex items-baseline justify-between gap-2">
+        <legend class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Vinegar Acid Fizz Test
+        </legend>
+        <span class="text-[11px] text-stone-500">Detects CaCO₃ → shifts CaO &amp; LOI</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <% [
+          [ "none", "None", "No bubbles" ],
+          [ "slight", "Slight", "Faint fizz" ],
+          [ "vigorous", "Vigorous", "Strong foam" ]
+        ].each do |val, label, hint| %>
+          <label class="relative cursor-pointer">
+            <%= f.radio_button :vinegar_fizz, val, class: "peer sr-only" %>
+            <div class="rounded-xl border border-[#D6C7B2] bg-white px-3 py-2.5 text-center transition-all peer-checked:border-[#B84A27] peer-checked:bg-[#B84A27]/10 peer-checked:ring-1 peer-checked:ring-[#B84A27] hover:border-stone-400">
+              <div class="text-xs font-bold text-stone-900"><%= label %></div>
+              <div class="text-[10px] text-stone-500"><%= hint %></div>
+            </div>
+          </label>
+        <% end %>
+      </div>
+    </fieldset>
+
+    <%# 2. Slaking & Plasticity Row %>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <fieldset class="space-y-2">
+        <legend class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Water Slaking Behavior
+        </legend>
+        <div class="grid grid-cols-3 gap-1.5">
+          <% [
+            [ "fast_disintegration", "Fast Slake" ],
+            [ "slow_flake", "Slow Flake" ],
+            [ "no_slake", "No Slake" ]
+          ].each do |val, label| %>
+            <label class="relative cursor-pointer">
+              <%= f.radio_button :slaking_behavior, val, class: "peer sr-only" %>
+              <div class="rounded-xl border border-[#D6C7B2] bg-white px-2 py-2 text-center text-xs font-semibold text-stone-800 transition-all peer-checked:border-[#1E4E79] peer-checked:bg-[#1E4E79]/10 peer-checked:text-[#1E4E79] hover:border-stone-400">
+                <%= label %>
+              </div>
+            </label>
+          <% end %>
+        </div>
+      </fieldset>
+
+      <fieldset class="space-y-2">
+        <legend class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Coil Plasticity
+        </legend>
+        <div class="grid grid-cols-3 gap-1.5">
+          <% [
+            [ "short_non_plastic", "Short" ],
+            [ "moderate", "Moderate" ],
+            [ "high_plastic", "High Plastic" ]
+          ].each do |val, label| %>
+            <label class="relative cursor-pointer">
+              <%= f.radio_button :plasticity, val, class: "peer sr-only" %>
+              <div class="rounded-xl border border-[#D6C7B2] bg-white px-2 py-2 text-center text-xs font-semibold text-stone-800 transition-all peer-checked:border-[#1E4E79] peer-checked:bg-[#1E4E79]/10 peer-checked:text-[#1E4E79] hover:border-stone-400">
+                <%= label %>
+              </div>
+            </label>
+          <% end %>
+        </div>
+      </fieldset>
+    </div>
+
+    <%# 3. Raw Color + Quick Swatches %>
+    <div class="space-y-2">
+      <div class="flex items-baseline justify-between gap-2">
+        <%= f.label :raw_color, "Raw / Unfired Color", class: "text-xs font-bold uppercase tracking-wider text-stone-700" %>
+        <span class="text-[11px] text-stone-500">Quick swatches or custom note</span>
+      </div>
+      <%= f.text_field :raw_color,
+        id: "field_observation_raw_color",
+        placeholder: "e.g., Red terracotta, Buff white, Blue gray…",
+        class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+      <div class="flex flex-wrap gap-1.5">
+        <% SamplesHelper::RAW_COLOR_SWATCHES.each do |sw| %>
+          <button
+            type="button"
+            data-action="click->map-picker#pickSwatch"
+            data-map-picker-target-id-param="field_observation_raw_color"
+            data-map-picker-value-param="<%= sw[:value] %>"
+            class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#FAF7F2] hover:bg-[#E8DFD0] border border-[#D6C7B2] text-[11px] font-medium text-stone-700 transition-colors cursor-pointer"
+          >
+            <span class="w-2.5 h-2.5 rounded-full <%= sw[:swatch] %>"></span>
+            <span><%= sw[:label] %></span>
+          </button>
+        <% end %>
+      </div>
+    </div>
+
+    <%# 4. Fired Test Tile Section %>
+    <div class="rounded-xl border border-[#E8DFD0] bg-[#FAF7F2] p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Test Tile Firing Results
+        </h3>
+        <span class="text-[11px] text-stone-500">Optional — refines fluxes, Fe2O3 &amp; Al2O3</span>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+        <div class="sm:col-span-7">
+          <%= f.label :fired_cone, "Fired Cone", class: "block text-xs font-semibold text-stone-600 mb-1" %>
+          <%= f.select :fired_cone,
+            SamplesHelper::FIRED_CONE_OPTIONS,
+            {},
+            class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+        </div>
+
+        <div class="sm:col-span-5">
+          <%= f.label :shrinkage_percent, "Total Shrinkage (%)", class: "block text-xs font-semibold text-stone-600 mb-1" %>
+          <%= f.number_field :shrinkage_percent,
+            step: "0.1",
+            min: 0,
+            max: 100,
+            placeholder: "e.g., 11.5",
+            class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 font-mono text-sm tabular-nums text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <%= f.label :fired_color, "Fired Color", class: "block text-xs font-semibold text-stone-600" %>
+        <%= f.text_field :fired_color,
+          id: "field_observation_fired_color",
+          placeholder: "e.g., Terracotta red, Cream buff, Chocolate brown…",
+          class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+        <div class="flex flex-wrap gap-1.5">
+          <% SamplesHelper::FIRED_COLOR_SWATCHES.each do |sw| %>
+            <button
+              type="button"
+              data-action="click->map-picker#pickSwatch"
+              data-map-picker-target-id-param="field_observation_fired_color"
+              data-map-picker-value-param="<%= sw[:value] %>"
+              class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white hover:bg-[#E8DFD0] border border-[#D6C7B2] text-[11px] font-medium text-stone-700 transition-colors cursor-pointer"
+            >
+              <span class="w-2.5 h-2.5 rounded-full <%= sw[:swatch] %>"></span>
+              <span><%= sw[:label] %></span>
+            </button>
+          <% end %>
+        </div>
+      </div>
+
+      <fieldset class="space-y-2">
+        <legend class="text-xs font-semibold text-stone-600">
+          Fired Melt / Vitrification State
+        </legend>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <% [
+            [ "refractory_chalky", "Refractory / Chalky" ],
+            [ "vitrified_tight", "Vitrified / Tight" ],
+            [ "bloated", "Bloated" ],
+            [ "melted_fluid", "Melted / Fluid" ]
+          ].each do |val, label| %>
+            <label class="relative cursor-pointer">
+              <%= f.radio_button :melt_state, val, class: "peer sr-only" %>
+              <div class="rounded-xl border border-[#D6C7B2] bg-white px-2.5 py-2 text-center text-xs font-semibold text-stone-800 transition-all peer-checked:border-[#B84A27] peer-checked:bg-[#B84A27]/10 peer-checked:text-[#963B1D] hover:border-stone-400">
+                <%= label %>
+              </div>
+            </label>
+          <% end %>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+      <%= f.submit "Apply Observations & Recalculate Assay",
+        class: "inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-sm font-semibold shadow-sm transition-colors cursor-pointer" %>
+
+      <span class="text-[11px] text-stone-500">
+        Updates Step 3 oxides, UMF &amp; reasoning live
+      </span>
+    </div>
+  <% end %>
+</div>

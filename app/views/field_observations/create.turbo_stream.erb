@@ -1,0 +1,11 @@
+<%= turbo_stream.replace "assay_estimate_panel" do %>
+  <%= render "samples/assay_estimate_panel", sample: @sample, assay_result: @assay_result %>
+<% end %>
+
+<%= turbo_stream.replace "field_observation_status" do %>
+  <%= render "field_observations/status", sample: @sample, field_observation: @field_observation %>
+<% end %>
+
+<%= turbo_stream.replace "field_observation_history" do %>
+  <%= render "field_observations/history", sample: @sample %>
+<% end %>

@@ -1,0 +1,92 @@
+<%= form_with model: sample,
+  url: sample.persisted? ? sample_path(sample) : samples_path,
+  method: sample.persisted? ? :patch : :post,
+  class: "space-y-4" do |f| %>
+
+  <% if sample.errors.any? %>
+    <div class="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-900">
+      <div class="font-semibold mb-1">Please fix the following before saving:</div>
+      <ul class="list-disc pl-4 space-y-0.5">
+        <% sample.errors.full_messages.each do |msg| %>
+          <li><%= msg %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <%= f.hidden_field :geologic_unit_id,
+    value: sample.geologic_unit_id,
+    data: { map_picker_target: "geologicUnitIdInput" } %>
+
+  <div class="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+    <div class="sm:col-span-7">
+      <%= f.label :title, "Sample Title", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+      <%= f.text_field :title,
+        required: true,
+        placeholder: "e.g., Commencement Bay Glacial Bluff Clay",
+        class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+    </div>
+
+    <div class="sm:col-span-5">
+      <%= f.label :material_category, "Material Category", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+      <%= f.select :material_category,
+        UserSample.material_categories.keys.map { |k| [ material_category_label(k), k ] },
+        {},
+        class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3.5">
+    <div>
+      <%= f.label :latitude, "Latitude (°N)", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+      <%= f.number_field :latitude,
+        value: sample.latitude&.round(5),
+        step: "0.00001",
+        min: -90,
+        max: 90,
+        data: {
+          map_picker_target: "latInput",
+          action: "change->map-picker#syncFromInputs"
+        },
+        class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 font-mono text-sm tabular-nums text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+    </div>
+
+    <div>
+      <%= f.label :longitude, "Longitude (°E)", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+      <%= f.number_field :longitude,
+        value: sample.longitude&.round(5),
+        step: "0.00001",
+        min: -180,
+        max: 180,
+        data: {
+          map_picker_target: "lngInput",
+          action: "change->map-picker#syncFromInputs"
+        },
+        class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 font-mono text-sm tabular-nums text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+    </div>
+  </div>
+
+  <div>
+    <%= f.label :notes, "Field Collection Notes", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+    <%= f.text_area :notes,
+      rows: 2,
+      placeholder: "Outcrop depth, creek bank seam, moisture, visible mica/sand inclusions…",
+      class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+  </div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+    <%= f.submit sample.persisted? ? "Update & Recalculate Baseline" : "Save & Run Baseline Assay",
+      class: "inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-sm font-semibold shadow-sm transition-colors cursor-pointer" %>
+
+    <% if sample.persisted? %>
+      <%= link_to "Delete Sample",
+        sample_path(sample),
+        data: { turbo_method: :delete, turbo_confirm: "Delete \"#{sample.title}\" and all its field observations?" },
+        class: "text-xs font-medium text-stone-500 hover:text-red-700 transition-colors" %>
+    <% else %>
+      <span class="text-xs text-stone-500">
+        Tip: Click anywhere on the map to auto-fetch the Macrostrat formation.
+      </span>
+    <% end %>
+  </div>
+<% end %>
