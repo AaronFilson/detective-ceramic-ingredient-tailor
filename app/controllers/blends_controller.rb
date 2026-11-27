@@ -158,12 +158,16 @@ class BlendsController < ApplicationController
 
   def normalized_cone_param
     raw = extract_param(:target_cone).to_s.strip
-    %w[6 10].include?(raw) ? raw : "6"
+    return raw if %w[6 10].include?(raw)
+
+    current_studio_setting.blend_target_cone
   end
 
   def normalized_surface_param
     raw = extract_param(:surface).to_s.strip.downcase
-    %w[gloss matte].include?(raw) ? raw : "gloss"
+    return raw if %w[gloss matte].include?(raw)
+
+    current_studio_setting.default_blend_surface
   end
 
   def extract_param(key)

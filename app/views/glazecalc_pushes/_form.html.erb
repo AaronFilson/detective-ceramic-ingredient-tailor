@@ -24,7 +24,7 @@
           <div>
             <%= form.label :base_url, "Glazecalc Instance URL", class: "block text-[11px] font-semibold text-stone-700 mb-1" %>
             <%= form.url_field :base_url,
-              value: local_assigns[:base_url] || Clients::GlazecalcPushClient::DEFAULT_BASE_URL,
+              value: local_assigns[:base_url] || current_studio_setting.effective_glazecalc_base_url,
               placeholder: "https://glazecalc.com",
               required: true,
               class: "w-full rounded-lg border border-[#D6C7B2] bg-[#FCFBF8] px-2.5 py-1.5 text-xs font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>

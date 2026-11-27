@@ -1,4 +1,4 @@
-<% content_for :title, "Local Glaze Blend Builder — TerraAssay Studio" %>
+<% content_for :title, "Local Glaze Blend Builder — DCI Tailor" %>
 
 <div class="flex flex-col flex-1 min-h-0 lg:h-screen bg-[#F5F0E6]">
   <%# Top Studio Header Bar %>
@@ -10,7 +10,7 @@
         </span>
         <div class="leading-tight">
           <div class="font-semibold tracking-tight text-sm sm:text-base text-[#FAF7F2]">
-            TerraAssay Studio
+            DCI Tailor
           </div>
           <div class="text-[11px] text-stone-400 hidden sm:block">
             Local Line-Blend &amp; Triaxial Glaze Recipe Builder
@@ -23,6 +23,11 @@
       <%= link_to root_path,
         class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-[#FAF7F2] border border-stone-700 text-xs sm:text-sm font-medium transition-colors" do %>
         <span>← Sample Workbench</span>
+      <% end %>
+
+      <%= link_to setup_path,
+        class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs sm:text-sm font-medium transition-colors" do %>
+        <span>Setup Wizard</span>
       <% end %>
 
       <%= link_to new_sample_path,
@@ -51,7 +56,7 @@
             Local Material Glaze Recipe Builder
           </h1>
           <p class="text-xs sm:text-sm text-stone-600 leading-relaxed">
-            Combine 2 assayed local materials (wild clay, wood ash, crushed rock) for an 11-step line blend or 3 materials for a 5% triaxial simplex grid. TerraAssay scores every blend against Cone 6 &amp; Cone 10 Gloss/Matte Seger UMF target bands and exports complete Materials + Recipe bundles.
+            Combine 2 assayed local materials (wild clay, wood ash, crushed rock) for an 11-step line blend or 3 materials for a 5% triaxial simplex grid. DCI Tailor scores every blend against Cone 6 &amp; Cone 10 Gloss/Matte Seger UMF target bands and exports complete Materials + Recipe bundles.
           </p>
         </div>
 
@@ -180,7 +185,7 @@
               <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-5 text-center space-y-3">
                 <p class="text-sm font-semibold text-stone-800">No assayed samples saved yet</p>
                 <p class="text-xs text-stone-600">
-                  Create and save at least 2 local material samples in TerraAssay Studio so they have chemical oxide assays ready to blend.
+                  Create and save at least 2 local material samples in DCI Tailor so they have chemical oxide assays ready to blend.
                 </p>
                 <%= link_to "+ Create First Sample",
                   new_sample_path,
