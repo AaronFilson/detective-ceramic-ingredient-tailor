@@ -1,0 +1,194 @@
+<% heuristic_assay = local_assigns.fetch(:heuristic_assay, sample&.latest_heuristic_assay_result) %>
+<% verified_lab_assay = local_assigns.fetch(:verified_lab_assay, sample&.latest_verified_lab_assay) %>
+<% lab_errors = Array(local_assigns[:lab_errors]).compact %>
+
+<div id="lab_calibration_panel" class="space-y-4">
+  <% if sample&.persisted? %>
+    <% if verified_lab_assay.present? %>
+      <% badge = source_type_badge(verified_lab_assay.source_type) %>
+      <% comparison = Lab::VerifiedAssayImporter.compare(heuristic_assay, verified_lab_assay) %>
+
+      <div class="rounded-xl border border-emerald-800/25 bg-[#FCFBF8] p-4 space-y-4 shadow-xs" data-verified-lab-card>
+        <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-[#E8DFD0]">
+          <div class="space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border <%= badge[:classes] %>">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                <%= badge[:label] %>
+              </span>
+
+              <% if verified_lab_assay.promoted_to_reference? %>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#1E4E79]/10 text-[#1E4E79] border border-[#1E4E79]/25">
+                  Promoted to Spatial Atlas
+                </span>
+              <% end %>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-700">
+              <% if verified_lab_assay.lab_name.present? %>
+                <span>Lab: <strong class="text-stone-900"><%= verified_lab_assay.lab_name %></strong></span>
+              <% end %>
+              <% if verified_lab_assay.lab_report_ref.present? %>
+                <span class="font-mono text-[11px] text-stone-600">Ref: <%= verified_lab_assay.lab_report_ref %></span>
+              <% end %>
+              <span class="font-mono text-[11px] text-stone-500">
+                Logged <%= verified_lab_assay.created_at.strftime("%Y-%m-%d %H:%M") %>
+              </span>
+            </div>
+          </div>
+
+          <%= button_to "Remove",
+            sample_lab_assay_path(sample, verified_lab_assay),
+            method: :delete,
+            form: { data: { turbo: true, turbo_confirm: "Remove this verified lab assay?" } },
+            class: "inline-flex items-center px-3 py-1.5 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-800 text-xs font-semibold transition-colors cursor-pointer" %>
+        </div>
+
+        <% if comparison.present? %>
+          <%= render "lab_assays/comparison_table",
+            comparison: comparison,
+            heuristic_assay: heuristic_assay,
+            verified_lab_assay: verified_lab_assay %>
+        <% else %>
+          <p class="text-xs text-stone-600">
+            Verified lab chemistry is active. Run a spatial heuristic estimate to compare predicted vs. measured oxide residuals.
+          </p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <details class="rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] overflow-hidden" <%= "open" if lab_errors.any? %>>
+      <summary class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-[#FAF7F2] hover:bg-[#F3ECE0]/70 cursor-pointer select-none transition-colors">
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-stone-800">
+            Log Verified Lab Assay (XRF / ICP-MS)
+          </div>
+          <div class="text-[11px] text-stone-500">
+            Upload WSU, Actlabs, or Orton CSV or enter Wt % oxides to benchmark &amp; calibrate spatial estimates
+          </div>
+        </div>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-lg border border-[#D6C7B2] bg-white text-[11px] font-semibold text-[#1E4E79]">
+          <%= verified_lab_assay.present? ? "Upload New Report" : "+ Add Lab Assay" %>
+        </span>
+      </summary>
+
+      <div class="p-4 border-t border-[#E8DFD0] space-y-4">
+        <% if lab_errors.any? %>
+          <div class="rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-900" role="alert">
+            <div class="font-semibold mb-1">Could not import verified lab assay:</div>
+            <ul class="list-disc pl-4 space-y-0.5">
+              <% lab_errors.each do |err| %>
+                <li><%= err %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+
+        <%= form_with scope: :lab_assay,
+          url: sample_lab_assays_path(sample),
+          method: :post,
+          multipart: true,
+          data: { turbo: true },
+          class: "space-y-4" do |f| %>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <%= f.label :source_type, "Analytical Method", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.select :source_type,
+                [
+                  [ "Verified Lab XRF", "verified_lab_xrf" ],
+                  [ "Verified Lab ICP-MS", "verified_lab_icpms" ]
+                ],
+                {},
+                class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+            </div>
+
+            <div>
+              <%= f.label :lab_name, "Laboratory Name", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.text_field :lab_name,
+                placeholder: "e.g., WSU GeoAnalytical, Actlabs, Orton",
+                class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+            </div>
+
+            <div>
+              <%= f.label :lab_report_ref, "Lab Report / Sample Ref", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.text_field :lab_report_ref,
+                placeholder: "e.g., WSU-2026-0412",
+                class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 font-mono text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-1.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <%= f.label :csv_file, "Upload Lab CSV / TSV Report", class: "text-xs font-bold uppercase tracking-wider text-stone-700" %>
+              <span class="text-[11px] text-stone-500">WSU · Actlabs · Orton · Generic Oxide,Wt%</span>
+            </div>
+            <%= f.file_field :csv_file,
+              accept: ".csv,.tsv,.txt",
+              class: "block w-full text-xs text-stone-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-[#D6C7B2] file:text-xs file:font-semibold file:bg-white file:text-[#1E4E79] hover:file:bg-stone-50 cursor-pointer" %>
+            <p class="text-[11px] text-stone-500">
+              Supports horizontal header rows or 2-column vertical reports; automatically converts FeO / FeOT to Fe2O3 and normalizes to 100.00%.
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold uppercase tracking-wider text-stone-700">
+                Or Enter Oxide Wt % Manually
+              </span>
+              <span class="text-[11px] text-stone-500">Normalized to exact 100.00%</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              <% CeramicOxides::KEYS.each do |oxide| %>
+                <div class="rounded-lg border border-[#E8DFD0] bg-white px-2.5 py-2">
+                  <label
+                    for="lab_assay_oxides_<%= oxide.downcase %>"
+                    class="block font-mono text-[11px] font-bold text-stone-700 mb-1"
+                  >
+                    <%= oxide %>
+                  </label>
+                  <%= number_field_tag "lab_assay[oxides][#{oxide}]",
+                    nil,
+                    id: "lab_assay_oxides_#{oxide.downcase}",
+                    step: "0.01",
+                    min: 0,
+                    max: 100,
+                    placeholder: "0.00",
+                    class: "w-full rounded-md border border-[#D6C7B2] bg-[#FCFBF8] px-2 py-1 font-mono text-xs tabular-nums text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/35 focus:border-[#B84A27]" %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+
+          <label class="flex items-start gap-2.5 rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3.5 py-2.5 cursor-pointer">
+            <%= f.check_box :promote_to_reference,
+              { class: "mt-0.5 rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" },
+              "1",
+              "0" %>
+            <span class="space-y-0.5">
+              <span class="block text-xs font-semibold text-stone-900">
+                Contribute to Regional Spatial Atlas (2.5x weighted calibration prior)
+              </span>
+              <span class="block text-[11px] text-stone-500">
+                <% if sample.latitude.present? && sample.longitude.present? %>
+                  Publishes this verified assay at (<%= format("%.4f, %.4f", sample.latitude.to_f, sample.longitude.to_f) %>) to improve future spatial baseline predictions.
+                <% else %>
+                  Add GPS coordinates to this sample in Step 1 to publish into the Regional Spatial Atlas.
+                <% end %>
+              </span>
+            </span>
+          </label>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <%= f.submit "Save Verified Lab Assay",
+              class: "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer" %>
+            <span class="text-[11px] text-stone-500">
+              Computes Seger UMF &amp; heuristic residual error live
+            </span>
+          </div>
+        <% end %>
+      </div>
+    </details>
+  <% end %>
+</div>
