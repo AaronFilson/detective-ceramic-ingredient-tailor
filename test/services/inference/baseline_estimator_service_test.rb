@@ -428,11 +428,158 @@ module Inference
       assert_in_delta 13.0, rock_result.oxides["Fe2O3"], 0.5
     end
 
+    test "community_verified_xrf assays receive 2.5x weight and pull estimated oxides strongly toward verified chemistry" do
+      # 4 standard assays at same spot with SiO2=56%, plus 2 community_verified_xrf assays at same spot with SiO2=68%
+      4.times do |idx|
+        create_assay!(
+          source: "usgs_ngdb",
+          external_id: "STD-CLAY-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT,
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 56.0 + (idx * 0.2), al2o3: 17.0, fe2o3: 6.0)
+        )
+      end
+
+      2.times do |idx|
+        create_assay!(
+          source: "community_verified_xrf",
+          external_id: "VERIFIED-CLAY-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT,
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 68.0 + (idx * 0.2), al2o3: 17.0, fe2o3: 6.0)
+        )
+      end
+
+      sample = UserSample.create!(
+        title: "Verified Neighborhood Clay",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+
+      result = Inference::BaselineEstimatorService.call(sample)
+
+      assert_equal :local_15km, result.strategy
+      # Unweighted median of [56.0, 56.2, 56.4, 56.6, 68.0, 68.2] is 56.5
+      assert_in_delta 56.5, result.oxide_ranges["SiO2"]["median"], 0.05
+      # With 2.5x verified weight (total weight 4*1 + 2*2.5 = 9.0), weighted SiO2 shifts well above 61%
+      assert_operator result.oxide_ranges["SiO2"]["weighted_median"], :>, 61.0
+      assert_operator result.oxides["SiO2"], :>, 61.0
+      assert_in_delta 100.0, result.oxides.values.sum, 0.01
+      assert result.reasoning_log.any? { |entry| entry.include?("verified-lab boost") }
+    end
+
+    test "inverse-distance weighting makes a nearby assay outweigh four distant 40km assays" do
+      # 1 assay right at sample pin (0 km) with high SiO2 = 68%
+      create_assay!(
+        external_id: "CLOSE-CLAY-0",
+        rock_type: "glacial_clay",
+        lat: TACOMA_LAT,
+        lng: TACOMA_LNG,
+        oxides: standard_clay_oxides(sio2: 68.0, al2o3: 17.0, fe2o3: 5.0)
+      )
+
+      # 4 assays ~40 km away (0.36 deg north) with low SiO2 = 54..55.5%
+      4.times do |idx|
+        create_assay!(
+          external_id: "FAR-CLAY-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT + 0.36 + (idx * 0.002),
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 54.0 + (idx * 0.5), al2o3: 17.0, fe2o3: 5.0)
+        )
+      end
+
+      sample = UserSample.create!(
+        title: "Regional IDW Test Clay",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+
+      result = Inference::BaselineEstimatorService.call(sample)
+
+      assert_equal :regional_50km, result.strategy
+      # Empirical unweighted median of [54.0, 54.5, 55.0, 55.5, 68.0] is 55.0
+      assert_in_delta 55.0, result.oxide_ranges["SiO2"]["median"], 0.05
+      # IDW pulls estimated SiO2 strongly toward the 0 km assay (68%)
+      assert_operator result.oxides["SiO2"], :>, 63.0
+      assert_in_delta 100.0, result.oxides.values.sum, 0.01
+      assert result.reasoning_log.any? { |entry| entry.include?("IDW spatial distance") }
+    end
+
+    test "USDA SSURGO soil profile prior nudges CaO/LOI for calcareous soil and Al2O3/LOI for clay-rich B horizon on wild_clay" do
+      5.times do |idx|
+        create_assay!(
+          external_id: "SOIL-BASE-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT,
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 59.0, al2o3: 17.0, fe2o3: 6.0)
+        )
+      end
+
+      base_sample = UserSample.create!(
+        title: "Clay Without Soil Profile",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+      base_result = Inference::BaselineEstimatorService.call(base_sample)
+
+      soil_profile = SoilProfile.create!(
+        mukey: "900101",
+        map_unit_name: "Kitsap silt loam",
+        component_name: "Kitsap",
+        component_percent: 85,
+        horizons: [
+          { "hzname" => "A", "top_cm" => 0, "bottom_cm" => 25, "clay_pct" => 22.0, "plasticity_index" => 10.0, "caco3_pct" => 0.0 },
+          { "hzname" => "Bt", "top_cm" => 25, "bottom_cm" => 85, "clay_pct" => 44.0, "plasticity_index" => 25.0, "caco3_pct" => 8.0 }
+        ],
+        max_clay_pct: 44.0,
+        max_plasticity_index: 25.0,
+        max_caco3_pct: 8.0,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG,
+        fetched_at: Time.current
+      )
+
+      soil_sample = UserSample.create!(
+        title: "Clay With Calcareous Claypan Profile",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG,
+        soil_profile: soil_profile
+      )
+      soil_result = Inference::BaselineEstimatorService.call(soil_sample)
+
+      assert_operator soil_result.oxides["CaO"], :>, base_result.oxides["CaO"] + 1.5
+      assert_operator soil_result.oxides["Al2O3"], :>, base_result.oxides["Al2O3"] + 0.3
+      assert_operator soil_result.oxides["LOI"], :>, base_result.oxides["LOI"] + 1.5
+      assert_in_delta 100.0, soil_result.oxides.values.sum, 0.01
+
+      assert soil_result.reasoning_log.any? { |line| line.include?("USDA SSURGO soil horizon prior") && line.include?("8.0% CaCO3") }
+      assert soil_result.reasoning_log.any? { |line| line.include?("USDA SSURGO soil horizon prior") && line.include?("44.0% clay") && line.include?("Plasticity Index 25.0") }
+
+      # Non-wild_clay samples (e.g. crushed_rock) must NOT receive topsoil/subsoil soil priors
+      rock_sample = UserSample.create!(
+        title: "Crushed Rock Over Calcareous Soil",
+        material_category: :crushed_rock,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG,
+        soil_profile: soil_profile
+      )
+      rock_result = Inference::BaselineEstimatorService.call(rock_sample)
+      assert_not rock_result.reasoning_log.any? { |line| line.include?("USDA SSURGO soil horizon prior") }
+    end
+
     private
 
-    def create_assay!(external_id:, rock_type:, lat:, lng:, oxides:)
+    def create_assay!(external_id:, rock_type:, lat:, lng:, oxides:, source: "test_seed")
       ReferenceAssay.create!(
-        source: "test_seed",
+        source: source,
         external_id: external_id,
         rock_type: rock_type,
         latitude: lat,

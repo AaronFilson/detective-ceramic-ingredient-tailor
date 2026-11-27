@@ -21,6 +21,21 @@ module Inference
     RANGE_PRECISION = 3
     OXIDE_PRECISION = 2
 
+    VERIFIED_LAB_SOURCES = %w[community_verified_xrf community_verified_icpms].freeze
+    VERIFIED_SOURCE_WEIGHT = 2.5
+    PREFERRED_LITHOLOGY_WEIGHT = 1.8
+    IDW_SMOOTHING_KM = 2.0
+    IDW_POWER = 1.25
+
+    SOIL_CACO3_THRESHOLD_PCT = 2.0
+    SOIL_CACO3_CONSERVATIVE_SCALE = 0.5
+    SOIL_CACO3_MAX_CAO_BASE = 6.0
+    SOIL_CACO3_CAO_RATIO = 0.56
+    SOIL_CACO3_LOI_RATIO = 0.44
+    SOIL_CLAY_THRESHOLD_PCT = 35.0
+    SOIL_CLAY_AL2O3_BOOST = 1.5
+    SOIL_CLAY_LOI_BOOST = 1.0
+
     CATEGORY_ROCK_TYPES = {
       "wild_clay" => %w[
         glacial_clay alluvial_clay marine_clay kaolin_clay
@@ -163,7 +178,9 @@ module Inference
         build_assay_result(
           assays: matched_assays,
           strategy: strategy,
-          search_radius: search_radius
+          search_radius: search_radius,
+          category: category,
+          filter_plan: filter_plan
         )
       end
     end
@@ -287,7 +304,10 @@ module Inference
     end
 
     def spatial_scope(lat, lng, radius_meters)
-      ReferenceAssay.within_radius(lat, lng, radius_meters).ordered_by_distance(lat, lng)
+      ReferenceAssay
+        .within_radius(lat, lng, radius_meters)
+        .with_distance_from(lat, lng)
+        .ordered_by_distance(lat, lng)
     end
 
     def match_filtered_in_scope(scope, filter_plan, min_count:)
@@ -366,12 +386,15 @@ module Inference
       end
     end
 
-    def build_assay_result(assays:, strategy:, search_radius:)
+    def build_assay_result(assays:, strategy:, search_radius:, category:, filter_plan:)
       oxide_ranges = {}
-      raw_medians = {}
+      raw_estimates = {}
+      preferred_types = Array(filter_plan[:preferred_types]).map(&:downcase)
+      weights = assays.map { |assay| assay_weight(assay, preferred_types: preferred_types) }
 
       CeramicOxides::KEYS.each do |oxide|
-        values = assays.map { |assay| [ assay.oxide_value(oxide) || 0.0, 0.0 ].max }.sort
+        raw_values = assays.map { |assay| [ assay.oxide_value(oxide) || 0.0, 0.0 ].max }
+        values = raw_values.sort
         min_v = values.first.round(RANGE_PRECISION)
         q1_v = percentile(values, 0.25).round(RANGE_PRECISION)
         median_v = percentile(values, 0.50).round(RANGE_PRECISION)
@@ -379,18 +402,23 @@ module Inference
         max_v = values.last.round(RANGE_PRECISION)
         iqr_v = (q3_v - q1_v).round(RANGE_PRECISION)
 
+        pairs = raw_values.zip(weights)
+        weighted_med = weighted_percentile(pairs, 0.50)
+        weighted_avg = weighted_mean(pairs)
+
         oxide_ranges[oxide] = {
           "min" => min_v,
           "q1" => q1_v,
           "median" => median_v,
           "q3" => q3_v,
           "max" => max_v,
-          "iqr" => iqr_v
+          "iqr" => iqr_v,
+          "weighted_median" => weighted_med.round(RANGE_PRECISION),
+          "weighted_mean" => weighted_avg.round(RANGE_PRECISION)
         }
-        raw_medians[oxide] = percentile(values, 0.50)
+        raw_estimates[oxide] = weighted_med
       end
 
-      normalized_oxides = normalize_to_exact_100(raw_medians)
       confidence = compute_confidence(
         strategy: strategy,
         sample_count: assays.size,
@@ -399,7 +427,11 @@ module Inference
 
       rock_summary = assays.map(&:rock_type).compact.tally.sort_by { |_, count| -count }.first(4)
                            .map { |rock, count| "#{rock} (#{count})" }.join(", ")
-      @reasoning_log << "Computed quartile oxide baseline from #{assays.size} assay(s) [#{rock_summary}]; confidence=#{confidence}."
+      weighting_summary = describe_weighting(assays, preferred_types)
+      @reasoning_log << "Computed quartile oxide baseline from #{assays.size} assay(s) [#{rock_summary}] using #{weighting_summary}; confidence=#{confidence}."
+
+      apply_soil_profile_priors!(raw_estimates, oxide_ranges, category)
+      normalized_oxides = normalize_to_exact_100(raw_estimates)
 
       Result.new(
         oxide_ranges: oxide_ranges,
@@ -417,6 +449,7 @@ module Inference
       template = CATEGORY_DEFAULT_RANGES.fetch(category, CATEGORY_DEFAULT_RANGES["other"])
       oxide_ranges = template.transform_values(&:dup)
       raw_medians = oxide_ranges.transform_values { |stats| stats["median"] }
+      apply_soil_profile_priors!(raw_medians, oxide_ranges, category)
       normalized_oxides = normalize_to_exact_100(raw_medians)
       confidence = TIER_BASE_CONFIDENCE[:category_default]
 
@@ -430,6 +463,155 @@ module Inference
         reasoning_log: @reasoning_log,
         matched_assay_ids: []
       )
+    end
+
+    def assay_weight(assay, preferred_types:)
+      source_w = VERIFIED_LAB_SOURCES.include?(assay.source.to_s) ? VERIFIED_SOURCE_WEIGHT : 1.0
+      lith_w = assay_matches_preferred?(assay, preferred_types) ? PREFERRED_LITHOLOGY_WEIGHT : 1.0
+      dist_w = distance_weight_for(assay)
+      source_w * lith_w * dist_w
+    end
+
+    def assay_matches_preferred?(assay, preferred_types)
+      return false if preferred_types.empty?
+
+      preferred_types.include?(assay.rock_type.to_s.downcase)
+    end
+
+    def distance_weight_for(assay)
+      return 1.0 unless assay.has_attribute?(:distance_meters)
+
+      raw_meters = assay[:distance_meters]
+      return 1.0 if raw_meters.nil?
+
+      dist_km = [ raw_meters.to_f / 1000.0, 0.0 ].max
+      1.0 / ((dist_km + IDW_SMOOTHING_KM)**IDW_POWER)
+    end
+
+    def describe_weighting(assays, preferred_types)
+      parts = []
+      has_distances = assays.any? { |a| a.has_attribute?(:distance_meters) && !a[:distance_meters].nil? }
+      verified_count = assays.count { |a| VERIFIED_LAB_SOURCES.include?(a.source.to_s) }
+      preferred_count = preferred_types.any? ? assays.count { |a| assay_matches_preferred?(a, preferred_types) } : 0
+
+      parts << "IDW spatial distance" if has_distances
+      parts << "lithology boost (#{preferred_count} preferred)" if preferred_count.positive?
+      parts << "verified-lab boost (#{verified_count} at #{VERIFIED_SOURCE_WEIGHT}x)" if verified_count.positive?
+
+      parts.any? ? "#{parts.join(" + ")} weighting" : "unweighted quartiles"
+    end
+
+    def apply_soil_profile_priors!(raw_estimates, oxide_ranges, category)
+      return unless category == "wild_clay"
+
+      profile = @user_sample.soil_profile
+      return unless profile
+
+      caco3 = profile.max_caco3_pct.to_f
+      if caco3 >= SOIL_CACO3_THRESHOLD_PCT
+        cao_base = [ caco3 * SOIL_CACO3_CAO_RATIO, SOIL_CACO3_MAX_CAO_BASE ].min
+        max_loi_base = SOIL_CACO3_MAX_CAO_BASE * (SOIL_CACO3_LOI_RATIO / SOIL_CACO3_CAO_RATIO)
+        loi_base = [ caco3 * SOIL_CACO3_LOI_RATIO, max_loi_base ].min
+        delta_cao = (cao_base * SOIL_CACO3_CONSERVATIVE_SCALE).round(RANGE_PRECISION)
+        delta_loi = (loi_base * SOIL_CACO3_CONSERVATIVE_SCALE).round(RANGE_PRECISION)
+
+        raw_estimates["CaO"] = raw_estimates["CaO"].to_f + delta_cao
+        raw_estimates["LOI"] = raw_estimates["LOI"].to_f + delta_loi
+        nudge_oxide_range!(oxide_ranges, "CaO", delta_cao)
+        nudge_oxide_range!(oxide_ranges, "LOI", delta_loi)
+
+        @reasoning_log << format(
+          "USDA SSURGO soil horizon prior (%s): measured %.1f%% CaCO3 — nudged CaO (+%.2f%%) and LOI (+%.2f%%) toward carbonate-bearing soil prior.",
+          profile.summary_label, caco3, delta_cao, delta_loi
+        )
+      end
+
+      clay_pct = profile.max_clay_pct.to_f
+      if clay_pct >= SOIL_CLAY_THRESHOLD_PCT
+        raw_estimates["Al2O3"] = raw_estimates["Al2O3"].to_f + SOIL_CLAY_AL2O3_BOOST
+        raw_estimates["LOI"] = raw_estimates["LOI"].to_f + SOIL_CLAY_LOI_BOOST
+        nudge_oxide_range!(oxide_ranges, "Al2O3", SOIL_CLAY_AL2O3_BOOST)
+        nudge_oxide_range!(oxide_ranges, "LOI", SOIL_CLAY_LOI_BOOST)
+
+        clay_hz = profile.clay_rich_horizon
+        hz_desc =
+          if clay_hz
+            depth = [ clay_hz["top_cm"], clay_hz["bottom_cm"] ].compact.join("–")
+            depth.empty? ? "#{clay_hz["hzname"] || "B"} horizon" : "#{clay_hz["hzname"] || "B"} horizon (#{depth} cm)"
+          else
+            "B horizon"
+          end
+        pi_desc = profile.max_plasticity_index.present? ? ", Plasticity Index #{format("%.1f", profile.max_plasticity_index.to_f)}" : ""
+
+        @reasoning_log << format(
+          "USDA SSURGO soil horizon prior (%s): %s measured %.1f%% clay%s — gently reinforced clay aluminosilicate Al2O3 (+%.2f%%) and LOI (+%.2f%%).",
+          profile.summary_label, hz_desc, clay_pct, pi_desc, SOIL_CLAY_AL2O3_BOOST, SOIL_CLAY_LOI_BOOST
+        )
+      end
+    end
+
+    def nudge_oxide_range!(oxide_ranges, oxide, delta)
+      range = oxide_ranges[oxide]
+      return unless range && delta.nonzero?
+
+      new_median = (range["median"].to_f + delta).clamp(0.0, 100.0).round(RANGE_PRECISION)
+      range["median"] = new_median
+      if range.key?("weighted_median")
+        range["weighted_median"] = (range["weighted_median"].to_f + delta).clamp(0.0, 100.0).round(RANGE_PRECISION)
+      end
+      if range.key?("weighted_mean")
+        range["weighted_mean"] = (range["weighted_mean"].to_f + delta).clamp(0.0, 100.0).round(RANGE_PRECISION)
+      end
+      range["q3"] = [ range["q3"].to_f, new_median ].max.round(RANGE_PRECISION)
+      range["max"] = [ range["max"].to_f, range["q3"] ].max.round(RANGE_PRECISION)
+      range["q1"] = [ range["q1"].to_f, new_median ].min.round(RANGE_PRECISION)
+      range["min"] = [ range["min"].to_f, range["q1"] ].min.round(RANGE_PRECISION)
+      range["iqr"] = (range["q3"] - range["q1"]).round(RANGE_PRECISION)
+    end
+
+    def weighted_percentile(value_weight_pairs, quantile)
+      return 0.0 if value_weight_pairs.empty?
+      return value_weight_pairs.first.first.to_f if value_weight_pairs.length == 1
+
+      sorted = value_weight_pairs.sort_by(&:first)
+      weights = sorted.map { |_, w| w.to_f }
+      total_weight = weights.sum
+      return percentile(sorted.map(&:first), quantile) unless total_weight.positive?
+
+      min_w, max_w = weights.minmax
+      return percentile(sorted.map(&:first), quantile) if (max_w - min_w) <= 1e-12
+
+      cumulative = 0.0
+      cdf_points = sorted.map do |val, weight|
+        midpoint = (cumulative + (0.5 * weight)) / total_weight
+        cumulative += weight
+        [ val.to_f, midpoint ]
+      end
+
+      q = quantile.to_f.clamp(0.0, 1.0)
+      return cdf_points.first.first if q <= cdf_points.first.last
+      return cdf_points.last.first if q >= cdf_points.last.last
+
+      upper_idx = cdf_points.index { |_, p| p >= q }
+      return cdf_points.last.first if upper_idx.nil?
+      return cdf_points[upper_idx].first if upper_idx.zero?
+
+      lower_val, lower_p = cdf_points[upper_idx - 1]
+      upper_val, upper_p = cdf_points[upper_idx]
+      span = upper_p - lower_p
+      return upper_val unless span.positive?
+
+      t = (q - lower_p) / span
+      lower_val + ((upper_val - lower_val) * t)
+    end
+
+    def weighted_mean(value_weight_pairs)
+      return 0.0 if value_weight_pairs.empty?
+
+      total_weight = value_weight_pairs.sum { |_, w| w.to_f }
+      return value_weight_pairs.sum { |v, _| v.to_f } / value_weight_pairs.length unless total_weight.positive?
+
+      value_weight_pairs.sum { |v, w| v.to_f * w.to_f } / total_weight
     end
 
     def percentile(sorted, quantile)

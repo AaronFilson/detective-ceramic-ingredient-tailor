@@ -28,9 +28,10 @@ module Ingestion
 
     MISSING_TOKENS = /\A(?:|na|n\/a|nd|bdl|n|null|none|nan|--+|-)\z/i
 
-    def initialize(input, source: default_source)
+    def initialize(input, source: default_source, bulk: false)
       @input = input
       @source = source.to_s
+      @bulk = bulk
     end
 
     def call
@@ -45,59 +46,16 @@ module Ingestion
 
       rows = CSV.parse(csv_body, headers: true, col_sep: col_sep, liberal_parsing: true)
       rows.each_with_index.each_slice(500) do |batch|
-        ReferenceAssay.transaction do
-          batch.each do |row, idx|
-            row_num = idx + 2
-            normalized_row = normalize_row_headers(row)
-
-            lat = extract_coordinate(normalized_row, LATITUDE_KEYS, -90.0..90.0)
-            lng = extract_coordinate(normalized_row, LONGITUDE_KEYS, -180.0..180.0)
-            if lat.nil? || lng.nil?
-              skipped += 1
-              errors << { row: row_num, reason: "Missing or invalid latitude/longitude" }
-              next
-            end
-
-            raw_oxides = extract_oxides(normalized_row)
-            if raw_oxides["SiO2"].nil? || !raw_oxides["SiO2"].positive? ||
-                raw_oxides["Al2O3"].nil? || !raw_oxides["Al2O3"].positive?
-              skipped += 1
-              errors << { row: row_num, reason: "Missing valid numeric SiO2 or Al2O3" }
-              next
-            end
-
-            normalized_oxides = CeramicOxides.normalize(raw_oxides)
-            if normalized_oxides.nil?
-              skipped += 1
-              errors << { row: row_num, reason: "Oxide total must be positive" }
-              next
-            end
-
-            rock_type = extract_rock_type(normalized_row)
-            external_id = extract_external_id(normalized_row, lat, lng, rock_type, normalized_oxides)
-            raw_metadata = build_raw_metadata(row)
-
-            assay = ReferenceAssay.find_or_initialize_by(source: @source, external_id: external_id)
-            was_new = assay.new_record?
-            assay.assign_attributes(
-              rock_type: rock_type,
-              location: Geolocatable.factory.point(lng, lat),
-              oxides: normalized_oxides,
-              raw_metadata: raw_metadata
-            )
-
-            if assay.save
-              if was_new
-                created += 1
-              else
-                updated += 1
-              end
-            else
-              skipped += 1
-              errors << { row: row_num, reason: assay.errors.full_messages.to_sentence }
-            end
+        batch_counts =
+          if @bulk
+            import_batch_bulk(batch, errors)
+          else
+            import_batch_individual(batch, errors)
           end
-        end
+
+        created += batch_counts[:created]
+        updated += batch_counts[:updated]
+        skipped += batch_counts[:skipped]
       end
 
       ImportResult.new(
@@ -128,6 +86,118 @@ module Ingestion
     end
 
     private
+
+    def import_batch_individual(batch, errors)
+      created = 0
+      updated = 0
+      skipped = 0
+
+      ReferenceAssay.transaction do
+        batch.each do |row, idx|
+          attrs = parse_row_attributes(row, idx + 2, errors)
+          if attrs.nil?
+            skipped += 1
+            next
+          end
+
+          assay = ReferenceAssay.find_or_initialize_by(source: attrs[:source], external_id: attrs[:external_id])
+          was_new = assay.new_record?
+          assay.assign_attributes(
+            rock_type: attrs[:rock_type],
+            location: attrs[:location],
+            oxides: attrs[:oxides],
+            raw_metadata: attrs[:raw_metadata]
+          )
+
+          if assay.save
+            if was_new
+              created += 1
+            else
+              updated += 1
+            end
+          else
+            skipped += 1
+            errors << { row: idx + 2, reason: assay.errors.full_messages.to_sentence }
+          end
+        end
+      end
+
+      { created: created, updated: updated, skipped: skipped }
+    end
+
+    def import_batch_bulk(batch, errors)
+      skipped = 0
+      duplicate_in_batch = 0
+      records_by_ext_id = {}
+      now = Time.current
+
+      batch.each do |row, idx|
+        attrs = parse_row_attributes(row, idx + 2, errors)
+        if attrs.nil?
+          skipped += 1
+          next
+        end
+
+        ext_id = attrs[:external_id]
+        duplicate_in_batch += 1 if records_by_ext_id.key?(ext_id)
+        records_by_ext_id[ext_id] = attrs.merge(created_at: now, updated_at: now)
+      end
+
+      return { created: 0, updated: 0, skipped: skipped } if records_by_ext_id.empty?
+
+      ext_ids = records_by_ext_id.keys
+      created = 0
+      updated = 0
+
+      ReferenceAssay.transaction do
+        existing_map = ReferenceAssay.where(source: @source, external_id: ext_ids).pluck(:external_id).index_with(true)
+        created = ext_ids.count { |eid| !existing_map.key?(eid) }
+        updated = ext_ids.count { |eid| existing_map.key?(eid) } + duplicate_in_batch
+
+        ReferenceAssay.upsert_all(
+          records_by_ext_id.values,
+          unique_by: :index_reference_assays_on_source_and_external_id
+        )
+      end
+
+      { created: created, updated: updated, skipped: skipped }
+    end
+
+    def parse_row_attributes(row, row_num, errors)
+      normalized_row = normalize_row_headers(row)
+
+      lat = extract_coordinate(normalized_row, LATITUDE_KEYS, -90.0..90.0)
+      lng = extract_coordinate(normalized_row, LONGITUDE_KEYS, -180.0..180.0)
+      if lat.nil? || lng.nil?
+        errors << { row: row_num, reason: "Missing or invalid latitude/longitude" }
+        return nil
+      end
+
+      raw_oxides = extract_oxides(normalized_row)
+      if raw_oxides["SiO2"].nil? || !raw_oxides["SiO2"].positive? ||
+          raw_oxides["Al2O3"].nil? || !raw_oxides["Al2O3"].positive?
+        errors << { row: row_num, reason: "Missing valid numeric SiO2 or Al2O3" }
+        return nil
+      end
+
+      normalized_oxides = CeramicOxides.normalize(raw_oxides)
+      if normalized_oxides.nil?
+        errors << { row: row_num, reason: "Oxide total must be positive" }
+        return nil
+      end
+
+      rock_type = extract_rock_type(normalized_row)
+      external_id = extract_external_id(normalized_row, lat, lng, rock_type, normalized_oxides)
+
+      {
+        source: @source,
+        external_id: external_id,
+        rock_type: rock_type,
+        location: Geolocatable.factory.point(lng, lat),
+        oxides: normalized_oxides,
+        raw_metadata: build_raw_metadata(row)
+      }
+    end
 
     def read_input_content
       raw = if @input.respond_to?(:read)

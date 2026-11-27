@@ -20,4 +20,11 @@ namespace :geochem do
     result = Ingestion::EarthchemCsvImporter.new(path).call
     puts "EarthChem import complete: imported=#{result.imported} (created=#{result.created}, updated=#{result.updated}), skipped=#{result.skipped}"
   end
+
+  desc "Fetch and bulk-import USGS ScienceBase NGDB assays for a region preset (WA, OR, PNW, CA) or bbox (min_lat,min_lng,max_lat,max_lng)"
+  task :fetch_usgs_region, [ :region_or_bbox ] => :environment do |_task, args|
+    region = args[:region_or_bbox].presence || ENV["REGION"].presence || "PNW"
+    result = Ingestion::UsgsSciencebaseFetcher.call(region: region)
+    puts "USGS ScienceBase fetch (#{region}) complete: files=#{result.files_processed}, matched_rows=#{result.matched_rows}, filtered_out=#{result.filtered_out_rows}, imported=#{result.imported} (created=#{result.created}, updated=#{result.updated}), skipped=#{result.skipped}"
+  end
 end
