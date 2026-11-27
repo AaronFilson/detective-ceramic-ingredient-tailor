@@ -22,7 +22,7 @@ class MineralOccurrenceLookupJobTest < ActiveJob::TestCase
     ENV["MINDAT_API_TOKEN"] = nil
 
     mrds_stub = stub_request(:get, MRDS_URL)
-      .with(query: hash_including("service" => "WFS", "typeName" => "mrds"))
+      .with(query: hash_including("service" => "WFS", "typeName" => "mrds-high"))
       .to_return(
         status: 200,
         body: {
@@ -58,7 +58,7 @@ class MineralOccurrenceLookupJobTest < ActiveJob::TestCase
     ENV["MINDAT_API_TOKEN"] = "job-test-token"
 
     mrds_stub = stub_request(:get, MRDS_URL)
-      .with(query: hash_including("service" => "WFS", "typeName" => "mrds"))
+      .with(query: hash_including("service" => "WFS", "typeName" => "mrds-high"))
       .to_return(
         status: 200,
         body: {

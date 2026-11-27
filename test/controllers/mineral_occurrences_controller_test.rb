@@ -113,7 +113,7 @@ class MineralOccurrencesControllerTest < ActionDispatch::IntegrationTest
     XML
 
     mrds_stub = stub_request(:get, MRDS_URL)
-      .with(query: hash_including("service" => "WFS", "typeName" => "mrds"))
+      .with(query: hash_including("service" => "WFS", "typeName" => "mrds-high"))
       .to_return(status: 200, body: mrds_gml, headers: { "Content-Type" => "text/xml" })
 
     assert_difference -> { MineralOccurrence.count }, 1 do

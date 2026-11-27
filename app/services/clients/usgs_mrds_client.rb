@@ -21,6 +21,7 @@ module Clients
 
     BASE_URL = "https://mrdata.usgs.gov"
     ENDPOINT_PATH = "/services/mrds"
+    WFS_TYPE_NAME = "mrds-high"
     SOURCE_NAME = "usgs_mrds"
     DEFAULT_RADIUS_KM = 50.0
     DEFAULT_MAX_FEATURES = 50
@@ -28,6 +29,63 @@ module Clients
     DEFAULT_TIMEOUT = 12
     DEFAULT_MAX_RETRIES = 2
     KM_PER_DEGREE_LAT = 111.32
+
+    # Standard USGS MRDS WFS <ms:code_list> commodity abbreviations mapped to human-readable names.
+    MRDS_CODE_MAP = {
+      "CLY" => "Clay",
+      "CLY1" => "Clay",
+      "CLY2" => "Fire Clay",
+      "CLY3" => "Ball Clay",
+      "CLY4" => "Kaolin",
+      "CLY5" => "Bentonite",
+      "KAO" => "Kaolin",
+      "BENT" => "Bentonite",
+      "FLD" => "Feldspar",
+      "LI" => "Lithium",
+      "TLC" => "Talc",
+      "PYP" => "Pyrophyllite",
+      "WOL" => "Wollastonite",
+      "SIL" => "Silica",
+      "QTZ" => "Quartz",
+      "DOL" => "Dolomite",
+      "MGS" => "Magnesite",
+      "MG" => "Magnesite",
+      "OLI" => "Olivine",
+      "B" => "Boron",
+      "BA" => "Barite",
+      "MN" => "Manganese",
+      "FE" => "Iron",
+      "CR" => "Chromium",
+      "CU" => "Copper",
+      "CO" => "Cobalt",
+      "NI" => "Nickel",
+      "ZR" => "Zircon",
+      "TI" => "Titanium",
+      "F" => "Fluorite",
+      "PUM" => "Pumice",
+      "PERL" => "Perlite",
+      "MICA" => "Mica",
+      "LIME" => "Limestone",
+      "LST" => "Limestone",
+      "SDG" => "Sand and Gravel",
+      "STN" => "Stone",
+      "AS" => "Arsenic",
+      "PB" => "Lead",
+      "HG" => "Mercury",
+      "CD" => "Cadmium",
+      "U" => "Uranium",
+      "TH" => "Thorium",
+      "S" => "Sulfur",
+      "PYR" => "Pyrite",
+      "ZN" => "Zinc",
+      "SN" => "Tin",
+      "V" => "Vanadium",
+      "AU" => "Gold",
+      "AG" => "Silver",
+      "W" => "Tungsten",
+      "MO" => "Molybdenum",
+      "SB" => "Antimony"
+    }.freeze
 
     DEFAULT_COMMODITIES = %w[
       Feldspar Lithium Spodumene Talc Wollastonite Kaolin Clay Silica Quartz
@@ -241,7 +299,7 @@ module Clients
         service: "WFS",
         version: "1.0.0",
         request: "GetFeature",
-        typeName: "mrds",
+        typeName: WFS_TYPE_NAME,
         bbox: format("%.5f,%.5f,%.5f,%.5f", bbox[:min_lng], bbox[:min_lat], bbox[:max_lng], bbox[:max_lat]),
         maxFeatures: @max_features
       }
@@ -376,7 +434,7 @@ module Clients
           child.each_element { |feature_el| nodes << feature_el }
         elsif local == "featuremembers"
           child.each_element { |feature_el| nodes << feature_el }
-        elsif local == "mrds"
+        elsif %w[mrds mrds-high mrds-low].include?(local)
           nodes << child
         end
       end
@@ -454,6 +512,7 @@ module Clients
         props["commodity"],
         props["commodities"]
       )
+      commodities = (commodities + decode_code_list(props["code_list"])).uniq
       minerals = extract_terms(
         props["ore"],
         props["gangue"],
@@ -469,6 +528,7 @@ module Clients
         "dev_stat" => present_string(props["dev_stat"]),
         "oper_type" => present_string(props["oper_type"]),
         "model_name" => present_string(props["model_name"]),
+        "code_list" => present_string(props["code_list"]),
         "state" => present_string(props["state"]),
         "county" => present_string(props["county"]),
         "score" => present_string(props["score"]),
@@ -491,7 +551,19 @@ module Clients
       str = present_string(raw)
       return nil if str.nil?
 
-      str.sub(/\Amrds\./i, "")
+      str.sub(/\Amrds(?:-(?:high|low))?\./i, "")
+    end
+
+    def decode_code_list(raw)
+      str = present_string(raw)
+      return [] if str.nil?
+
+      str.split(/[\s,;\/]+/).filter_map do |token|
+        cleaned = token.strip.upcase
+        next if cleaned.empty?
+
+        MRDS_CODE_MAP[cleaned] || cleaned
+      end.uniq
     end
 
     def extract_terms(*values)

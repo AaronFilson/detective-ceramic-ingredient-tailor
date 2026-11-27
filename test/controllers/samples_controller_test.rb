@@ -122,6 +122,12 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
         body: { Table: [] }.to_json,
         headers: { "Content-Type" => "application/json" }
       )
+    stub_request(:get, %r{\Ahttps://rest\.isric\.org/soilgrids/v2\.0/properties/query})
+      .to_return(
+        status: 200,
+        body: { properties: { layers: [] } }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
 
     get geologic_lookup_samples_path(lat: 10.0, lng: -150.0)
 

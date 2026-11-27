@@ -89,7 +89,8 @@
                 <span class="font-mono"><%= format("%.2f", (umf["flux_total"] || 1.0).to_f) %></span>
               </div>
               <dl class="space-y-1 font-mono text-xs tabular-nums">
-                <% %w[CaO MgO MnO Na2O K2O].each do |ox| %>
+                <% flux_keys = (%w[CaO MgO MnO Na2O K2O] + fluxes.keys.select { |k| fluxes[k].to_f > 0 }).uniq %>
+                <% flux_keys.each do |ox| %>
                   <% val = fluxes[ox].to_f %>
                   <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
                     <dt><%= ox %></dt>
@@ -110,7 +111,8 @@
               R2O3 Intermed.
             </div>
             <dl class="space-y-1 font-mono text-xs tabular-nums">
-              <% %w[Al2O3 Fe2O3].each do |ox| %>
+              <% intermediate_keys = (%w[Al2O3 Fe2O3] + intermediates.keys.select { |k| intermediates[k].to_f > 0 }).uniq %>
+              <% intermediate_keys.each do |ox| %>
                 <% val = intermediates[ox].to_f %>
                 <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
                   <dt><%= ox %></dt>
@@ -126,7 +128,8 @@
               RO2 Formers
             </div>
             <dl class="space-y-1 font-mono text-xs tabular-nums">
-              <% %w[SiO2 TiO2 P2O5].each do |ox| %>
+              <% glass_former_keys = (%w[SiO2 TiO2 P2O5] + glass_formers.keys.select { |k| glass_formers[k].to_f > 0 }).uniq %>
+              <% glass_former_keys.each do |ox| %>
                 <% val = glass_formers[ox].to_f %>
                 <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
                   <dt><%= ox %></dt>

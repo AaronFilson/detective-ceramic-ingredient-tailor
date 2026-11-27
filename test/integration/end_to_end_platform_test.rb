@@ -194,4 +194,103 @@ class EndToEndPlatformTest < ActionDispatch::IntegrationTest
     assert_includes api_payload.dig("links", "glazecalc_export"), "/samples/#{sample.id}/export/glazecalc.json"
     assert_includes api_payload.dig("links", "glaze_vault_export"), "/samples/#{sample.id}/export/glaze_vault.json"
   end
+
+  test "hard-rock workflow: DS-801 XRD + PNW mineral atlas -> pXRF CSV + kiln LOI -> hazard screener & full-oxide exports" do
+    # 1. Seed curated PNW mineral occurrences & USGS DS-801 C-horizon XRD soils
+    minerals_result = Ingestion::MineralOccurrenceSeeder.call
+    assert_equal 25, minerals_result.created
+    assert_equal 25, MineralOccurrence.count
+
+    ds801_result = Ingestion::UsgsDs801Importer.new(Rails.root.join("db/seeds/sample_ds801_soils.csv")).call
+    assert_equal 12, ds801_result.created
+
+    # 2. Verify JSON mineral occurrence API returns PNW deposits sorted by PostGIS distance
+    get "/mineral_occurrences.json", params: { lat: TACOMA_LAT, lng: TACOMA_LNG, radius_km: 150 }
+    assert_response :success
+    occurrences = JSON.parse(response.body)
+    assert_operator occurrences.size, :>=, 2
+    distances = occurrences.map { |o| o.fetch("distance_km").to_f }
+    assert_equal distances.sort, distances
+
+    # 3. Create a crushed hard-rock sample near Puget Sound & verify Step 1 XRD + Mineral Atlas cards render
+    sample = UserSample.create!(
+      title: "Cascade Pegmatite Feldspar",
+      material_category: :crushed_rock,
+      latitude: TACOMA_LAT,
+      longitude: TACOMA_LNG
+    )
+    SamplesController.estimate_sample(sample)
+
+    get sample_path(sample)
+    assert_response :success
+    assert_select "#mineral_occurrences_card"
+    assert_select "[data-regional-xrd-card]"
+    assert_select "#hazard_alerts_panel"
+    assert_includes response.body, "Hard-Rock Minerals"
+
+    # 4. Upload a handheld Bruker pXRF CSV with studio kiln LOI (dry 100g -> fired 94.5g = 5.50% LOI),
+    # LCT pegmatite K/Rb pathfinder signal (Rb 850 ppm), minor Cu/Sr/Ba, and As/S hazards
+    pxrf_csv = <<~CSV
+      File #,DateTime,Application,Method,Si %,Al %,Fe %,Ca %,Mg %,Na %,K %,Ti %,P %,Mn %,Rb ppm,Cs ppm,Sr ppm,Ba ppm,Cu ppm,As ppm,S ppm
+      104,2026-11-27 10:00:00,GeoChem,Major+Trace,31.2,9.8,0.6,0.5,0.2,3.1,5.4,0.05,0.08,0.04,850,95,1800,6500,1400,85,12000
+    CSV
+    uploaded = Rack::Test::UploadedFile.new(StringIO.new(pxrf_csv), "text/csv", original_filename: "bruker_pegmatite.csv")
+
+    post sample_lab_assays_path(sample),
+      params: {
+        lab_assay: {
+          analysis_method: "pxrf",
+          csv_file: uploaded,
+          dry_weight_g: "100.0",
+          fired_weight_g: "94.5",
+          lab_name: "Bruker S1 TITAN Studio Scan"
+        }
+      },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+
+    pxrf_assay = sample.reload.latest_verified_lab_assay
+    assert_not_nil pxrf_assay
+    assert_equal "pxrf", pxrf_assay.analysis_method
+    assert_in_delta 5.5, pxrf_assay.oxides["LOI"].to_f, 0.05
+    assert_operator pxrf_assay.minor_oxides["BaO"].to_f, :>, 0.5
+    assert_operator pxrf_assay.minor_oxides["CuO"].to_f, :>, 0.1
+    assert_operator pxrf_assay.minor_oxides["SrO"].to_f, :>, 0.1
+    assert_in_delta 850.0, pxrf_assay.trace_elements_ppm["Rb"].to_f, 0.1
+
+    # 5. Render workbench and verify Step 3 Hazard Alerts, K/Rb pill, Food-Safe Caution & Minor Oxides strip
+    get sample_path(sample)
+    assert_response :success
+    assert_select "#hazard_alerts_panel[data-highest-severity='danger']"
+    assert_select "[data-food-safe-caution]"
+    assert_select "[data-krb-pathfinder]", text: /LCT Li Signal/
+    assert_select "[data-hazard-code='toxic_arsenic']"
+    assert_select "[data-hazard-code='sulfide_degassing']"
+    assert_select "[data-hazard-code='pxrf_light_element_blind_spot']"
+    assert_select "[data-hazard-code='lct_pegmatite_pathfinder']"
+    assert_select "[data-hazard-code='hard_rock_silica_processing']"
+    assert_select "[data-minor-oxides-strip]"
+    assert_select "[data-minor-oxide='BaO']"
+    assert_select "[data-minor-oxide='CuO']"
+
+    # 6. Verify Glazecalc & Glaze Vault exports include minor oxides, sum to 100.00%, and embed hazard notes
+    get "/samples/#{sample.id}/export/glazecalc.json"
+    assert_response :success
+    gc = JSON.parse(response.body)
+    assert_in_delta 100.0, gc.fetch("oxideAnalysis").values.sum(&:to_f) + gc.fetch("loi").to_f, 0.05
+    assert_operator gc.dig("oxideAnalysis", "BaO").to_f, :>, 0.0
+    assert_operator gc.dig("oxideAnalysis", "CuO").to_f, :>, 0.0
+    assert_in_delta 1.0, gc.dig("umf", "flux_total").to_f, 0.01
+    assert Array(gc.fetch("notes")).any? { |n| n.match?(/Hazard|Arsenic|Barium|Sulfur/i) }
+
+    get "/samples/#{sample.id}/export/glaze_vault.json"
+    assert_response :success
+    gv = JSON.parse(response.body)
+    assert_equal "pxrf", gv.dig("provenance", "assay_result", "analysis_method")
+    assert_operator gv.dig("provenance", "assay_result", "minor_oxides", "BaO").to_f, :>, 0.0
+    assert_in_delta 850.0, gv.dig("provenance", "assay_result", "trace_elements_ppm", "Rb").to_f, 0.1
+    assert gv.dig("materials", 0, "oxides").any? { |entry| entry["oxide"] == "BaO" }
+  end
 end

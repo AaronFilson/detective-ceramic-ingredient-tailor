@@ -72,7 +72,7 @@ module Clients
             "service" => "WFS",
             "version" => "1.0.0",
             "request" => "GetFeature",
-            "typeName" => "mrds",
+            "typeName" => "mrds-high",
             "maxFeatures" => "50"
           )
         )
@@ -143,7 +143,7 @@ module Clients
       }.to_json
 
       stub = stub_request(:get, MRDS_URL)
-        .with(query: hash_including("service" => "WFS", "typeName" => "mrds"))
+        .with(query: hash_including("service" => "WFS", "typeName" => "mrds-high"))
         .to_return(status: 200, body: geojson_body, headers: { "Content-Type" => "application/json" })
 
       results = Clients::UsgsMrdsClient.search_nearby(lat: 47.55, lng: -117.15, radius_km: 100)
@@ -268,6 +268,43 @@ module Clients
       assert_raises(Clients::UsgsMrdsClient::Error) do
         Clients::UsgsMrdsClient.search_nearby!(lat: 42.5, lng: -118.4, radius_km: 25)
       end
+    end
+
+    test "decodes live mrds-high GML <ms:code_list> commodity abbreviations cleanly" do
+      live_gml = <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <wfs:FeatureCollection
+          xmlns:ms="http://mapserver.gis.umn.edu/mapserver"
+          xmlns:wfs="http://www.opengis.net/wfs"
+          xmlns:gml="http://www.opengis.net/gml">
+          <gml:featureMember>
+            <ms:mrds-high fid="mrds-high.127878">
+              <ms:geometry>
+                <gml:Point srsName="EPSG:4326">
+                  <gml:coordinates>-122.521530,47.522600</gml:coordinates>
+                </gml:Point>
+              </ms:geometry>
+              <ms:dep_id>10131407</ms:dep_id>
+              <ms:site_name>Harper</ms:site_name>
+              <ms:dev_stat>Past Producer</ms:dev_stat>
+              <ms:url>https://mrdata.usgs.gov/mrds/show-mrds.php?dep_id=10131407</ms:url>
+              <ms:code_list> CLY FLD</ms:code_list>
+            </ms:mrds-high>
+          </gml:featureMember>
+        </wfs:FeatureCollection>
+      XML
+
+      stub_request(:get, MRDS_URL)
+        .with(query: hash_including("typeName" => "mrds-high"))
+        .to_return(status: 200, body: live_gml, headers: { "Content-Type" => "text/xml; charset=utf-8" })
+
+      results = Clients::UsgsMrdsClient.search_nearby(lat: TACOMA_LAT, lng: TACOMA_LNG, radius_km: 50)
+      assert_equal 1, results.size
+      harper = results.first
+      assert_equal "10131407", harper.external_id
+      assert_equal "Harper", harper.name
+      assert_equal [ "Clay", "Feldspar" ], harper.commodities
+      assert_equal "Past Producer", harper.deposit_type
     end
 
     test "rejects invalid coordinates before making any HTTP calls" do
