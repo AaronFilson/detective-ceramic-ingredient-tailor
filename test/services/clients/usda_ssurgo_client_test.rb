@@ -31,6 +31,7 @@ module Clients
           parsed = JSON.parse(req.body)
           parsed["format"] == "JSON" &&
             parsed["query"].include?("SDA_Get_Mukey_from_intersection_with_WktWgs84('point(-122.444300 47.252900)')") &&
+            parsed["query"].include?("ch.pi_r") &&
             parsed["query"].include?("chorizon")
         end
         .to_return(status: 200, body: sda_body, headers: { "Content-Type" => "application/json" })
@@ -59,6 +60,27 @@ module Clients
       assert_equal "Bt", profile.clay_rich_horizon["hzname"]
       assert_includes profile.summary_label, "Alderwood"
       assert_includes profile.summary_label, "43% clay"
+    end
+
+    test "prefers horizon-bearing soil series over horizonless Urban land component" do
+      sda_body = {
+        Table: [
+          [ "3227032", "Urban land, 5 to 20 percent slopes", "Urban land", "90", nil, nil, nil, nil, nil, nil ],
+          [ "3227032", "Urban land, 5 to 20 percent slopes", "Alderwood", "5", "A", "0", "18", "8", "3", "0" ],
+          [ "3227032", "Urban land, 5 to 20 percent slopes", "Alderwood", "5", "Bw1", "18", "53", "8", "5", "0" ]
+        ]
+      }.to_json
+
+      stub_request(:post, SDA_URL)
+        .to_return(status: 200, body: sda_body, headers: { "Content-Type" => "application/json" })
+
+      profile = Clients::UsdaSsurgoClient.lookup(lat: TACOMA_LAT, lng: TACOMA_LNG)
+
+      assert_equal "3227032", profile.mukey
+      assert_equal "Alderwood", profile.component_name
+      assert_equal 2, profile.horizons.size
+      assert_in_delta 8.0, profile.max_clay_pct.to_f, 0.01
+      assert_in_delta 5.0, profile.max_plasticity_index.to_f, 0.01
     end
 
     test "returns cached SoilProfile within 250m without making HTTP request" do

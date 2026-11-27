@@ -123,7 +123,7 @@ module Clients
       wkt_point = format("point(%.6f %.6f)", lng_f, lat_f)
       <<~SQL.squish
         SELECT mu.mukey, mu.muname, c.compname, c.comppct_r,
-               ch.hzname, ch.hzdept_r, ch.hzdepb_r, ch.claytotal_r, ch.plasticindex_r, ch.caco3_r
+               ch.hzname, ch.hzdept_r, ch.hzdepb_r, ch.claytotal_r, ch.pi_r, ch.caco3_r
         FROM mapunit AS mu
         INNER JOIN SDA_Get_Mukey_from_intersection_with_WktWgs84('#{wkt_point}') AS sda
           ON mu.mukey = sda.mukey
@@ -210,9 +210,10 @@ module Clients
 
       grouped = normalized_rows.group_by { |r| [ r[:mukey], r[:component_name], r[:component_percent] ] }
       dominant_rows = grouped.values.max_by do |comp_rows|
+        has_horizon = comp_rows.any? { |r| !horizon_blank?(r) } ? 1 : 0
         pct = comp_rows.first[:component_percent] || -1.0
         clay_count = comp_rows.count { |r| !r[:clay_pct].nil? }
-        [ pct, clay_count ]
+        [ has_horizon, pct, clay_count ]
       end
 
       return nil if dominant_rows.nil? || dominant_rows.empty?

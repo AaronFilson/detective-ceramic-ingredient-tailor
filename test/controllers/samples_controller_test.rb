@@ -81,6 +81,17 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "GET /samples/geologic_lookup renders Turbo Frame geologic_unit_card with matched unit" do
+    stub_request(:post, "https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest")
+      .to_return(
+        status: 200,
+        body: {
+          Table: [
+            [ "472529", "Alderwood gravelly sandy loam", "Alderwood", "85", "Bt", "35", "90", "38", "22", "0" ]
+          ]
+        }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+
     get geologic_lookup_samples_path(lat: 47.2529, lng: -122.4443),
       headers: { "Turbo-Frame" => "geologic_unit_card" }
 
@@ -93,6 +104,7 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       assert_includes response.body, "Macrostrat #991001"
       assert_includes response.body, "glacial till"
       assert_includes response.body, "Polygon"
+      assert_includes response.body, "Alderwood"
     end
   end
 
@@ -102,6 +114,12 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       .to_return(
         status: 200,
         body: { type: "FeatureCollection", features: [] }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+    stub_request(:post, "https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest")
+      .to_return(
+        status: 200,
+        body: { Table: [] }.to_json,
         headers: { "Content-Type" => "application/json" }
       )
 

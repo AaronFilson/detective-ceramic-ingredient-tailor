@@ -54,14 +54,30 @@ class EndToEndPlatformTest < ActionDispatch::IntegrationTest
         }.to_json
       )
 
+    ssurgo_stub = stub_request(:post, "https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          Table: [
+            [ "472529", "Alderwood-Everett complex", "Alderwood", "85", "Ap", "0", "35", "18", "8", "0" ],
+            [ "472529", "Alderwood-Everett complex", "Alderwood", "85", "Bt", "35", "90", "38", "22", "0" ]
+          ]
+        }.to_json
+      )
+
     get geologic_lookup_samples_path(lat: TACOMA_LAT, lng: TACOMA_LNG),
       headers: { "Turbo-Frame" => "geologic_unit_card" }
     assert_response :success
     assert_requested macrostrat_stub, times: 1
+    assert_requested ssurgo_stub, times: 1
 
     cached_unit = GeologicUnit.find_by!(macrostrat_id: 472_529)
     assert_equal "Vashon Glacial Drift", cached_unit.name
     assert_not_nil cached_unit.boundary
+
+    cached_soil = SoilProfile.find_by!(mukey: "472529")
+    assert_equal "Alderwood", cached_soil.component_name
 
     # Second lookup hits PostGIS ST_Covers cache without issuing a second HTTP call
     post samples_path, params: {
@@ -78,6 +94,15 @@ class EndToEndPlatformTest < ActionDispatch::IntegrationTest
     sample = UserSample.order(:id).last
     assert_redirected_to sample_path(sample)
     assert_equal cached_unit.id, sample.geologic_unit_id
+    assert_equal cached_soil.id, sample.soil_profile_id
+
+    # Verify full merged Step 1-3 workbench renders Soil Card, Stull SVG, Lab Calibration, and Glazecalc Push
+    get sample_path(sample)
+    assert_response :success
+    assert_select "svg[data-stull-chart]"
+    assert_select "#lab_calibration_panel"
+    assert_select "#glazecalc_push_panel"
+    assert_includes response.body, "Alderwood"
 
     baseline_assay = sample.latest_assay_result
     assert_not_nil baseline_assay
