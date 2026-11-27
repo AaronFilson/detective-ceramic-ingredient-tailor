@@ -9,6 +9,7 @@ class SoilProfileLookupJob < ApplicationJob
     return nil if sample.latitude.nil? || sample.longitude.nil?
 
     profile = Clients::UsdaSsurgoClient.lookup(lat: sample.latitude, lng: sample.longitude)
+    profile ||= Clients::IsricSoilgridsClient.lookup(lat: sample.latitude, lng: sample.longitude)
     return nil if profile.nil?
 
     profile_changed = sample.soil_profile_id != profile.id
