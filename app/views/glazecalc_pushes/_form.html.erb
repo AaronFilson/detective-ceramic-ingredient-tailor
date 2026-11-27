@@ -1,0 +1,55 @@
+<div id="glazecalc_push_panel" class="pt-3 border-t border-[#E8DFD0]">
+  <details class="group rounded-xl border border-[#D6C7B2] bg-white overflow-hidden">
+    <summary class="px-3.5 py-2.5 bg-[#FAF7F2] hover:bg-[#F5F0E6] transition-colors cursor-pointer list-none flex items-center justify-between gap-2 select-none">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-[#1E4E79]/12 text-[#1E4E79] font-mono text-[10px] font-bold shrink-0">
+          API
+        </span>
+        <span class="text-xs font-bold text-stone-800 truncate">
+          Push Directly to Glazecalc Account
+        </span>
+      </div>
+      <span class="text-[11px] font-medium text-[#1E4E79] group-open:hidden">Expand</span>
+      <span class="text-[11px] font-medium text-stone-500 hidden group-open:inline">Hide</span>
+    </summary>
+
+    <div class="p-3.5 border-t border-[#E8DFD0] space-y-3">
+      <p class="text-[11px] text-stone-600 leading-relaxed">
+        Send <strong class="text-stone-900"><%= sample.title %></strong> straight to your Glazecalc materials library via <code class="font-mono text-[10px] px-1 py-0.5 rounded bg-stone-100 text-[#1E4E79]">POST /api/materials</code>.
+        Generate a personal API token with <strong>&ldquo;Read and change&rdquo;</strong> write scope in Glazecalc settings.
+      </p>
+
+      <%= form_with url: sample_glazecalc_push_path(sample), method: :post, class: "space-y-3" do |form| %>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <%= form.label :base_url, "Glazecalc Instance URL", class: "block text-[11px] font-semibold text-stone-700 mb-1" %>
+            <%= form.url_field :base_url,
+              value: local_assigns[:base_url] || Clients::GlazecalcPushClient::DEFAULT_BASE_URL,
+              placeholder: "https://glazecalc.com",
+              required: true,
+              class: "w-full rounded-lg border border-[#D6C7B2] bg-[#FCFBF8] px-2.5 py-1.5 text-xs font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+          </div>
+
+          <div>
+            <%= form.label :api_token, "Glazecalc Personal API Token", class: "block text-[11px] font-semibold text-stone-700 mb-1" %>
+            <%= form.password_field :api_token,
+              autocomplete: "off",
+              placeholder: "Paste personal access token…",
+              required: true,
+              class: "w-full rounded-lg border border-[#D6C7B2] bg-[#FCFBF8] px-2.5 py-1.5 text-xs font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <p class="text-[11px] text-stone-500">
+            Token is used transiently for this request and never stored.
+          </p>
+          <%= form.submit "Push to Glazecalc",
+            class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer" %>
+        </div>
+      <% end %>
+
+      <%= render "glazecalc_pushes/result", push_result: local_assigns[:push_result] %>
+    </div>
+  </details>
+</div>

@@ -1,0 +1,268 @@
+<turbo-frame id="blend_results" class="block space-y-6">
+  <% if local_assigns[:error_message].present? %>
+    <div class="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-950 shadow-sm space-y-1" role="alert">
+      <div class="font-bold text-red-900">Unable to Calculate Blend</div>
+      <p class="text-xs text-red-800"><%= error_message %></p>
+    </div>
+  <% elsif local_assigns[:blend_result].present? %>
+    <% optimal = blend_result.optimal %>
+    <% band = blend_result.target_band %>
+    <% export_params = {
+      sample_ids: blend_result.samples.map(&:id),
+      target_cone: blend_result.target_cone,
+      surface: blend_result.surface,
+      recipe_title: local_assigns[:recipe_title]
+    }.compact %>
+    <% bar_colors = [ "bg-[#B84A27]", "bg-[#1E4E79]", "bg-[#2F6F5E]" ] %>
+    <% zone_badge_for = lambda do |zone|
+      case zone
+      when "Gloss"
+        "bg-[#1E4E79]/12 text-[#1E4E79] border-[#1E4E79]/25"
+      when "Matte"
+        "bg-emerald-900/10 text-emerald-900 border-emerald-800/25"
+      when "Crazing / High-Silica"
+        "bg-amber-100 text-amber-950 border-amber-300"
+      when "Unfused / Refractory"
+        "bg-stone-200 text-stone-800 border-stone-300"
+      else
+        "bg-orange-100 text-[#963B1D] border-orange-300"
+      end
+    end %>
+
+    <%# Optimal Recipe Hero Card %>
+    <article class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
+      <div class="px-5 py-4 bg-[#FAF7F2] border-b border-[#E8DFD0] flex flex-wrap items-center justify-between gap-3">
+        <div class="space-y-0.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#B84A27] text-white">
+              Optimal Recipe
+            </span>
+            <span class="font-mono text-[11px] font-semibold text-stone-600">
+              <%= blend_result.line_blend? ? "Line Blend · #{blend_result.candidates.size} Steps" : "Triaxial Blend · #{blend_result.candidates.size} Simplex Points" %>
+            </span>
+            <span class="text-[11px] font-semibold text-[#1E4E79]">
+              Target: <%= band[:label] %>
+            </span>
+          </div>
+          <h2 class="text-base sm:text-lg font-bold text-stone-900 tracking-tight">
+            <%= local_assigns[:recipe_title].presence || blend_result.default_recipe_title %>
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border <%= zone_badge_for.call(optimal.stull_zone) %>">
+            Stull: <%= optimal.stull_zone %>
+          </span>
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#1F1B18] text-amber-200 tabular-nums">
+            <%= format("%.1f%%", optimal.fit_score) %> Fit
+          </span>
+        </div>
+      </div>
+
+      <div class="p-5 space-y-5">
+        <%# Dry-Weight Batch Breakdown + Proportion Bar %>
+        <div class="space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <h3 class="font-bold uppercase tracking-wider text-stone-600">
+              Optimal Batch Recipe (100% Dry Weight)
+            </h3>
+            <span class="font-mono text-[11px] text-stone-500">
+              Penalty <%= format("%.3f", optimal.penalty) %>
+            </span>
+          </div>
+
+          <div class="h-3 w-full rounded-full overflow-hidden flex bg-stone-200 border border-[#D6C7B2]">
+            <% optimal.weights.each_with_index do |entry, idx| %>
+              <% next unless entry[:percentage].positive? %>
+              <div
+                class="<%= bar_colors[idx % bar_colors.size] %> h-full transition-all"
+                style="width: <%= entry[:percentage] %>%"
+                title="<%= entry[:sample].title %>: <%= entry[:percentage] %>%"
+              ></div>
+            <% end %>
+          </div>
+
+          <div class="grid grid-cols-1 <%= optimal.weights.size == 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2' %> gap-3">
+            <% optimal.weights.each_with_index do |entry, idx| %>
+              <div class="rounded-xl border border-[#E8DFD0] bg-white p-3.5 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0 <%= bar_colors[idx % bar_colors.size] %>"></span>
+                    <span class="text-xs font-bold text-stone-900 truncate"><%= entry[:sample].title %></span>
+                  </div>
+                  <div class="mt-0.5 text-[11px] text-stone-500">
+                    <%= material_category_label(entry[:sample].material_category) %>
+                  </div>
+                </div>
+                <div class="font-mono text-xl font-bold text-stone-900 tabular-nums shrink-0">
+                  <%= entry[:percentage] %>%
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <%# Optimal Seger UMF vs Target Band Readout %>
+        <div class="space-y-2.5">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-stone-600">
+            Predicted Seger UMF vs <%= band[:label] %> Target Band
+          </h3>
+
+          <% flux_axis = band[:flux_axis] %>
+          <% flux_label = flux_axis == :r2o ? "R2O Fluxes" : "RO Fluxes" %>
+          <% flux_val = flux_axis == :r2o ? optimal.r2o_total : optimal.ro_total %>
+          <% flux_range = band[flux_axis] %>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <% [
+              { label: "SiO₂ (mol)", value: format("%.2f", optimal.sio2), range: "#{band[:sio2].begin}–#{band[:sio2].end}", ok: optimal.band_checks[:sio2] },
+              { label: "Al₂O₃ (mol)", value: format("%.2f", optimal.al2o3), range: "#{band[:al2o3].begin}–#{band[:al2o3].end}", ok: optimal.band_checks[:al2o3] },
+              { label: "SiO₂ : Al₂O₃", value: optimal.si_al_ratio.present? ? "#{format('%.2f', optimal.si_al_ratio)} : 1" : "—", range: "#{band[:si_al].begin}–#{band[:si_al].end}", ok: optimal.band_checks[:si_al] },
+              { label: flux_label, value: format("%.2f", flux_val), range: "#{flux_range.begin}–#{flux_range.end}", ok: optimal.band_checks[:flux] }
+            ].each do |metric| %>
+              <div class="rounded-xl border p-3 <%= metric[:ok] ? 'border-emerald-200 bg-emerald-50/60' : 'border-[#E8DFD0] bg-[#FAF7F2]' %>">
+                <div class="flex items-center justify-between gap-1 text-[10px] uppercase tracking-wider font-semibold text-stone-500">
+                  <span><%= metric[:label] %></span>
+                  <span class="<%= metric[:ok] ? 'text-emerald-700 font-bold' : 'text-amber-700' %>">
+                    <%= metric[:ok] ? "In Band" : "Outside" %>
+                  </span>
+                </div>
+                <div class="mt-1 font-mono text-lg font-bold text-stone-900 tabular-nums">
+                  <%= metric[:value] %>
+                </div>
+                <div class="text-[10px] font-mono text-stone-500">
+                  Target: <%= metric[:range] %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+
+          <%# Full Flux / Oxide Strip %>
+          <div class="rounded-xl border border-[#E8DFD0] bg-[#FAF7F2] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono tabular-nums">
+            <div class="flex flex-wrap gap-x-3 gap-y-1 text-stone-700">
+              <span><strong>R₂O:</strong> <%= format("%.2f", optimal.r2o_total) %></span>
+              <span><strong>RO:</strong> <%= format("%.2f", optimal.ro_total) %></span>
+              <span><strong>CaO:</strong> <%= format("%.2f", optimal.umf.dig("fluxes", "CaO").to_f) %></span>
+              <span><strong>MgO:</strong> <%= format("%.2f", optimal.umf.dig("fluxes", "MgO").to_f) %></span>
+              <span><strong>Fe₂O₃:</strong> <%= format("%.2f", optimal.umf.dig("intermediates", "Fe2O3").to_f) %></span>
+            </div>
+            <div class="text-stone-500">
+              Eq. Wt <%= format("%.1f", optimal.umf["equivalent_weight"].to_f) %> · LOI <%= format("%.1f%%", optimal.oxides["LOI"].to_f) %>
+            </div>
+          </div>
+        </div>
+
+        <%# One-Click Export Bundles %>
+        <div class="pt-3 border-t border-[#E8DFD0] flex flex-wrap items-center justify-between gap-3">
+          <div class="text-[11px] text-stone-600">
+            Export complete bundle containing all custom local material definitions <strong>and</strong> this optimal glaze recipe:
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <%= link_to "Glazecalc Recipe + Materials Bundle",
+              export_glazecalc_blends_path(export_params),
+              data: { turbo: false },
+              class: "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs font-semibold shadow-sm transition-colors" %>
+
+            <%= link_to "Glaze Vault Recipe + Materials Archive",
+              export_glaze_vault_blends_path(export_params),
+              data: { turbo: false },
+              class: "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs font-semibold shadow-sm transition-colors" %>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <%# Full Line-Blend Progression or Top Triaxial Candidates Table %>
+    <% rows = blend_result.line_blend? ? blend_result.candidates : blend_result.top_candidates(12) %>
+    <article class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
+      <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="text-sm font-bold text-stone-900 tracking-tight">
+            <%= blend_result.line_blend? ? "Line-Blend Progression (0/100 → 100/0)" : "Top 12 Triaxial Candidates (5% Simplex Grid)" %>
+          </h3>
+          <p class="text-[11px] text-stone-500">
+            <% if blend_result.triaxial? %>
+              Evaluated <%= blend_result.candidates.size %> simplex combinations:
+              <%= blend_result.zone_counts.map { |zone, count| "#{count} #{zone}" }.join(" · ") %>
+            <% else %>
+              11 discrete 10%-increment test-tile batches across both local materials.
+            <% end %>
+          </p>
+        </div>
+        <span class="font-mono text-[11px] text-stone-500">
+          <%= blend_result.samples.map(&:title).join(" / ") %>
+        </span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-[#FAF7F2] border-b border-[#E8DFD0] text-[10px] uppercase tracking-wider text-stone-500">
+              <th class="py-2.5 pl-4 pr-2 font-semibold">Batch %</th>
+              <th class="py-2.5 px-2 font-semibold text-right">SiO₂</th>
+              <th class="py-2.5 px-2 font-semibold text-right">Al₂O₃</th>
+              <th class="py-2.5 px-2 font-semibold text-right">Si:Al</th>
+              <th class="py-2.5 px-2 font-semibold text-right">R₂O / RO</th>
+              <th class="py-2.5 px-3 font-semibold">Stull Zone</th>
+              <th class="py-2.5 pl-2 pr-4 font-semibold text-right">Fit</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100 text-xs bg-white">
+            <% rows.each do |candidate| %>
+              <% is_optimal = candidate == optimal %>
+              <tr class="<%= is_optimal ? 'bg-[#1E4E79]/8 font-semibold' : 'hover:bg-[#FAF7F2]/80' %> transition-colors">
+                <td class="py-2.5 pl-4 pr-2 font-mono tabular-nums text-stone-900 whitespace-nowrap">
+                  <span><%= candidate.batch_label %></span>
+                  <% if is_optimal %>
+                    <span class="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase tracking-wider bg-[#B84A27] text-white">
+                      Best
+                    </span>
+                  <% end %>
+                </td>
+                <td class="py-2.5 px-2 font-mono text-right tabular-nums text-stone-800">
+                  <%= format("%.2f", candidate.sio2) %>
+                </td>
+                <td class="py-2.5 px-2 font-mono text-right tabular-nums text-stone-800">
+                  <%= format("%.2f", candidate.al2o3) %>
+                </td>
+                <td class="py-2.5 px-2 font-mono text-right tabular-nums text-stone-800">
+                  <%= candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "—" %>
+                </td>
+                <td class="py-2.5 px-2 font-mono text-right tabular-nums text-stone-600 whitespace-nowrap">
+                  <%= format("%.2f / %.2f", candidate.r2o_total, candidate.ro_total) %>
+                </td>
+                <td class="py-2.5 px-3 whitespace-nowrap">
+                  <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border <%= zone_badge_for.call(candidate.stull_zone) %>">
+                    <%= candidate.stull_zone %>
+                  </span>
+                </td>
+                <td class="py-2.5 pl-2 pr-4 font-mono text-right tabular-nums text-stone-900">
+                  <%= format("%.1f%%", candidate.fit_score) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  <% else %>
+    <div class="rounded-2xl border border-dashed border-[#D6C7B2] bg-[#FCFBF8] p-8 text-center space-y-3">
+      <div class="font-mono text-xs uppercase tracking-widest text-stone-400">Ready to Blend</div>
+      <h2 class="text-base font-bold text-stone-900">
+        Select 2 or 3 Assayed Local Materials
+      </h2>
+      <p class="text-xs text-stone-600 max-w-md mx-auto leading-relaxed">
+        <% if local_assigns[:available_samples].present? && available_samples.size >= 2 %>
+          Choose 2 materials for a 10% line blend or 3 materials for a 5% triaxial simplex grid, pick your target cone and surface, then click <strong>Calculate Optimal Glaze Blend</strong>.
+        <% else %>
+          You need at least 2 saved samples with chemical oxide assays to build a local glaze blend. Save another wild clay, wood ash, or crushed rock sample in the Studio Workbench first.
+        <% end %>
+      </p>
+      <% unless local_assigns[:available_samples].present? && available_samples.size >= 2 %>
+        <%= link_to "+ Add Another Sample",
+          new_sample_path,
+          class: "inline-flex items-center px-4 py-2 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs font-semibold transition-colors" %>
+      <% end %>
+    </div>
+  <% end %>
+</turbo-frame>
