@@ -99,6 +99,138 @@ class LabAssaysControllerTest < ActionDispatch::IntegrationTest
     tempfile&.unlink
   end
 
+  test "POST /samples/:sample_id/lab_assays with handheld pXRF CSV and kiln LOI weights updates via Turbo Stream" do
+    pxrf_csv = <<~CSV
+      Sample ID,Si (%),Si Err,Al (%),Fe (%),Ca (%),Mg (%),K (%),Ti (%),Rb (ppm),Ba (ppm),Zr (ppm),As (ppm)
+      PXRF-BLUFF-1,28.90,0.20,9.50,3.20,1.35,0.95,2.80,0.45,420,900,850,65
+    CSV
+
+    tempfile = Tempfile.new([ "bruker_pxrf", ".csv" ])
+    tempfile.write(pxrf_csv)
+    tempfile.rewind
+    uploaded = Rack::Test::UploadedFile.new(tempfile.path, "text/csv", original_filename: "bruker_pxrf.csv")
+
+    assert_difference -> { @sample.assay_results.count }, 1 do
+      post sample_lab_assays_path(@sample),
+        params: {
+          lab_assay: {
+            source_type: "pxrf",
+            lab_name: "Bruker S1 TITAN",
+            dry_weight_g: "100.0",
+            fired_weight_g: "91.5",
+            csv_file: uploaded
+          }
+        },
+        headers: { "Accept" => "text/vnd.turbo-stream.html" }
+    end
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    assert_includes response.body, '<turbo-stream action="replace" target="assay_estimate_panel">'
+    assert_includes response.body, '<turbo-stream action="replace" target="lab_calibration_panel">'
+    assert_includes response.body, "Handheld pXRF"
+    assert_includes response.body, "90% Confidence"
+    assert_includes response.body, "data-pxrf-badge"
+    assert_includes response.body, "data-lab-minor-trace-summary"
+    assert_includes response.body, "data-studio-kiln-loi-calculator"
+
+    latest = @sample.reload.latest_assay_result
+    assert_equal "pxrf", latest.analysis_method
+    assert_in_delta 0.90, latest.confidence_score.to_f, 0.001
+    assert_in_delta 8.50, latest.oxides["LOI"], 0.01
+    assert_in_delta 100.0, latest.oxides.values.sum, 0.01
+    assert_in_delta 420.0, latest.trace_elements_ppm["Rb"], 0.1
+    assert latest.minor_oxides.key?("BaO")
+    assert latest.minor_oxides.key?("ZrO2")
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  test "POST /samples/:sample_id/lab_assays with pXRF CSV and promote_to_reference as HTML redirects cleanly" do
+    pxrf_csv = "Sample,Si (%),Al (%),Fe (%),Ca (%),K (%),Rb (ppm)\nPXRF-2,30.0,9.5,2.5,1.2,3.1,180\n"
+    tempfile = Tempfile.new([ "vanta_pxrf", ".csv" ])
+    tempfile.write(pxrf_csv)
+    tempfile.rewind
+    uploaded = Rack::Test::UploadedFile.new(tempfile.path, "text/csv", original_filename: "vanta_pxrf.csv")
+
+    assert_difference -> { ReferenceAssay.count }, 1 do
+      post sample_lab_assays_path(@sample),
+        params: {
+          lab_assay: {
+            source_type: "pxrf",
+            measured_loi_pct: "7.2",
+            promote_to_reference: "1",
+            csv_file: uploaded
+          }
+        }
+    end
+
+    assert_redirected_to sample_path(@sample)
+    assert_match(/Handheld pXRF/, flash[:notice])
+    assert_match(/Spatial Atlas/, flash[:notice])
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  test "POST /samples/:sample_id/lab_assays rejects invalid pXRF kiln weights with 422 Turbo Stream" do
+    pxrf_csv = "Sample,Si (%),Al (%),K (%)\nS1,30.0,10.0,3.0\n"
+    tempfile = Tempfile.new([ "bad_loi", ".csv" ])
+    tempfile.write(pxrf_csv)
+    tempfile.rewind
+    uploaded = Rack::Test::UploadedFile.new(tempfile.path, "text/csv", original_filename: "bad_loi.csv")
+
+    assert_no_difference -> { @sample.assay_results.count } do
+      post sample_lab_assays_path(@sample),
+        params: {
+          lab_assay: {
+            source_type: "pxrf",
+            dry_weight_g: "50.0",
+            fired_weight_g: "60.0",
+            csv_file: uploaded
+          }
+        },
+        headers: { "Accept" => "text/vnd.turbo-stream.html" }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Fired weight cannot exceed dry weight"
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  test "renders lab_assays/_hazard_alerts partial cleanly with danger badges, food-safe caution, and K/Rb pill" do
+    pxrf_assay = @sample.assay_results.create!(
+      source_type: :verified_lab_xrf,
+      analysis_method: "pxrf",
+      oxides: { "SiO2" => 65.0, "Al2O3" => 18.0, "K2O" => 6.0, "Na2O" => 4.0, "CaO" => 1.5, "Fe2O3" => 1.5, "LOI" => 4.0 },
+      minor_oxides: { "BaO" => 2.8, "SO3" => 0.4 },
+      trace_elements_ppm: { "Rb" => 480.0, "As" => 80.0 }
+    )
+
+    html = ApplicationController.render(
+      partial: "lab_assays/hazard_alerts",
+      locals: { sample: @sample, assay_result: pxrf_assay, nearby_minerals: [], nearby_xrd: {} }
+    )
+
+    assert_includes html, "data-hazard-alerts"
+    assert_includes html, 'data-highest-severity="danger"'
+    assert_includes html, "data-food-safe-caution"
+    assert_includes html, "data-krb-pathfinder"
+    assert_includes html, "LCT Li Signal"
+    assert_includes html, "Elevated Arsenic"
+    assert_includes html, "Barium Toxicity"
+    assert_includes html, "Handheld pXRF Light-Element"
+
+    clear_html = ApplicationController.render(
+      partial: "lab_assays/hazard_alerts",
+      locals: { sample: @sample, assay_result: @heuristic_assay, nearby_minerals: [], nearby_xrd: {} }
+    )
+    assert_includes clear_html, 'data-hazard-status="clear"'
+  end
+
   test "POST /samples/:sample_id/lab_assays as HTML redirects to sample workbench" do
     post sample_lab_assays_path(@sample),
       params: {

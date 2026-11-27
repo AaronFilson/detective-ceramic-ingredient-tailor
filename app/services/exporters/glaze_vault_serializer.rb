@@ -3,7 +3,8 @@
 module Exporters
   # Serializes an AssayResult (or UserSample via its latest AssayResult) into a
   # Glaze Vault v1 archival export payload ("glaze-vault-export") complete with
-  # material entry, studio firing sheet, and full geologic/diagnostic provenance.
+  # material entry (major + minor ceramic oxides), studio firing sheet, hazard
+  # notices, and full geologic/diagnostic/trace provenance.
   class GlazeVaultSerializer
     FORMAT_NAME = "glaze-vault-export"
     EXPORT_VERSION = 1
@@ -40,7 +41,10 @@ module Exporters
     end
 
     def call
-      normalized = GlazecalcMaterialSerializer.normalize_oxides(@assay_result.oxides)
+      normalized = GlazecalcMaterialSerializer.normalize_oxides(
+        @assay_result.oxides,
+        minor_oxides: @assay_result.respond_to?(:minor_oxides) ? @assay_result.minor_oxides : nil
+      )
       observations = ordered_observations
       latest_obs = observations.last
       now_iso = Time.current.utc.iso8601
@@ -73,7 +77,8 @@ module Exporters
     private
 
     def build_oxide_entries(normalized)
-      GlazecalcMaterialSerializer::FIRED_OXIDES.filter_map do |oxide|
+      fired_keys = normalized.keys - [ "LOI" ]
+      fired_keys.filter_map do |oxide|
         pct = normalized[oxide]
         next unless pct.positive?
 
@@ -230,11 +235,32 @@ module Exporters
         sections << "Assay Reasoning: #{reasoning.join(' | ')}"
       end
 
+      hazard_notes = GlazecalcMaterialSerializer.high_severity_hazard_notes(
+        assay_result: @assay_result,
+        user_sample: @sample
+      )
+      sections.concat(hazard_notes)
+
       sections.join("\n")
     end
 
     def build_provenance(normalized, observations)
       umf = @assay_result.umf_formula.present? ? @assay_result.umf_formula : GlazecalcMaterialSerializer.compute_umf(normalized)
+
+      assay_provenance = {
+        "id" => @assay_result.id,
+        "source_type" => @assay_result.source_type,
+        "confidence_score" => @assay_result.confidence_score&.to_f,
+        "oxides" => normalized,
+        "minor_oxides" => (@assay_result.respond_to?(:minor_oxides) && @assay_result.minor_oxides.is_a?(Hash)) ? @assay_result.minor_oxides : {},
+        "trace_elements_ppm" => (@assay_result.respond_to?(:trace_elements_ppm) && @assay_result.trace_elements_ppm.is_a?(Hash)) ? @assay_result.trace_elements_ppm : {},
+        "oxide_ranges" => @assay_result.oxide_ranges || {},
+        "umf_formula" => umf,
+        "reasoning_log" => Array(@assay_result.reasoning_log)
+      }
+      if @assay_result.respond_to?(:analysis_method) && @assay_result.analysis_method.present?
+        assay_provenance["analysis_method"] = @assay_result.analysis_method
+      end
 
       {
         "sample" => {
@@ -248,15 +274,7 @@ module Exporters
         },
         "geologic_unit" => serialize_geologic_unit(@sample.geologic_unit),
         "field_observations" => observations.map { |obs| serialize_observation(obs) },
-        "assay_result" => {
-          "id" => @assay_result.id,
-          "source_type" => @assay_result.source_type,
-          "confidence_score" => @assay_result.confidence_score&.to_f,
-          "oxides" => normalized,
-          "oxide_ranges" => @assay_result.oxide_ranges || {},
-          "umf_formula" => umf,
-          "reasoning_log" => Array(@assay_result.reasoning_log)
-        }
+        "assay_result" => assay_provenance
       }
     end
 

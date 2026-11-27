@@ -3,19 +3,25 @@
 module Exporters
   # Serializes an AssayResult (or UserSample via its latest AssayResult) into
   # a glazecalc-compatible Material JSON payload with stoichiometric unity
-  # values, exact 100.00% oxide+LOI normalization, UMF breakdown, and provenance.
+  # values, exact 100.00% oxide+LOI normalization (including minor ceramic
+  # oxides when present), UMF breakdown, hazard notices, and provenance.
   class GlazecalcMaterialSerializer
     APPLICATION_NAME = "detective-ceramic-ingredient-tailor"
     EXPORT_FORMAT = "glazecalc-export"
     EXPORT_VERSION = 1
 
-    MOLAR_MASSES = Chemistry::UmfCalculator::MOLECULAR_WEIGHTS
+    MOLAR_MASSES = CeramicOxides::ALL_OXIDE_MOLAR_WEIGHTS
     FIRED_OXIDES = Chemistry::UmfCalculator::FIRED_OXIDES
+    MINOR_FIRED_OXIDES = Chemistry::UmfCalculator::MINOR_FIRED_OXIDES
+    ALL_FIRED_OXIDES = Chemistry::UmfCalculator::ALL_FIRED_OXIDES
     FLUX_OXIDES = Chemistry::UmfCalculator::FLUX_OXIDES
+    ALL_FLUX_OXIDES = Chemistry::UmfCalculator::ALL_FLUX_OXIDES
     R2O_OXIDES = Chemistry::UmfCalculator::R2O_OXIDES
     RO_OXIDES = Chemistry::UmfCalculator::RO_OXIDES
     INTERMEDIATE_OXIDES = Chemistry::UmfCalculator::INTERMEDIATE_OXIDES
     GLASS_FORMER_OXIDES = Chemistry::UmfCalculator::GLASS_FORMER_OXIDES
+
+    HIGH_SEVERITY_LEVELS = %i[danger warning].freeze
 
     def self.call(assay_result_or_sample)
       new(assay_result_or_sample).call
@@ -53,18 +59,26 @@ module Exporters
       end
     end
 
-    # Normalizes an oxide hash so that all canonical CeramicOxides::KEYS sum to
-    # exact 100.00% (at 2 decimal places) with 0.0 <= LOI < 100.0 and any 0.01
-    # rounding residual applied to the largest fired oxide.
-    def self.normalize_oxides(raw_oxides)
+    # Normalizes an oxide hash (plus optional minor_oxides) so that all major
+    # CeramicOxides::KEYS and any positive non-volatile minor ceramic oxides sum
+    # to exact 100.00% (at 2 decimal places) with 0.0 <= LOI <= 99.90 and any
+    # 0.01 rounding residual applied to the largest fired oxide.
+    def self.normalize_oxides(raw_oxides, minor_oxides: nil)
       raise ArgumentError, "AssayResult oxides must be a non-empty Hash" unless raw_oxides.is_a?(Hash) && raw_oxides.any?
 
       source = raw_oxides.transform_keys(&:to_s)
-      sanitized = CeramicOxides::KEYS.each_with_object({}) do |key, acc|
-        acc[key] = parse_non_negative_float(source[key])
+      minors = (minor_oxides.is_a?(Hash) ? minor_oxides : {}).transform_keys(&:to_s)
+      merged = source.merge(minors.slice(*MINOR_FIRED_OXIDES))
+
+      active_minor_keys = MINOR_FIRED_OXIDES.select { |key| parse_non_negative_float(merged[key]).positive? }
+      fired_keys = FIRED_OXIDES + active_minor_keys
+      ordered_keys = fired_keys + [ "LOI" ]
+
+      sanitized = ordered_keys.each_with_object({}) do |key, acc|
+        acc[key] = parse_non_negative_float(merged[key])
       end
 
-      fired_total = FIRED_OXIDES.sum { |key| sanitized[key] }
+      fired_total = fired_keys.sum { |key| sanitized[key] }
       total = fired_total + sanitized["LOI"]
       raise ArgumentError, "AssayResult must contain positive fired oxide weight percentages" unless fired_total.positive? && total.positive?
 
@@ -77,19 +91,19 @@ module Exporters
         hundredths["LOI"] = 9_990
       end
 
-      largest_fired = FIRED_OXIDES.max_by { |key| scaled[key] }
+      largest_fired = fired_keys.max_by { |key| scaled[key] }
       residual = 10_000 - hundredths.values.sum
 
       if residual != 0
         if hundredths[largest_fired] + residual >= 10
           hundredths[largest_fired] += residual
         else
-          apply_residual_safely!(hundredths, residual)
+          apply_residual_safely!(hundredths, residual, fired_keys)
         end
       end
 
       # Guarantee at least 0.10% fired oxide remains after rounding.
-      if FIRED_OXIDES.sum { |key| hundredths[key] } <= 0
+      if fired_keys.sum { |key| hundredths[key] } <= 0
         hundredths[largest_fired] = 10
         hundredths["LOI"] = 9_990
       end
@@ -98,6 +112,7 @@ module Exporters
     end
 
     # Computes Unity Molecular Formula via Chemistry::UmfCalculator.
+    # Normalized oxides already include any active minor ceramic oxides directly.
     def self.compute_umf(normalized_oxides)
       Chemistry::UmfCalculator.call(normalized_oxides)
     end
@@ -134,6 +149,22 @@ module Exporters
       "Field observations: #{parts.join('; ')}"
     end
 
+    def self.high_severity_hazard_notes(assay_result:, user_sample:)
+      return [] unless defined?(Chemistry::HazardScreenerService)
+
+      report = Chemistry::HazardScreenerService.call(
+        assay_result: assay_result,
+        user_sample: user_sample
+      )
+
+      report.alerts
+        .select { |alert| HIGH_SEVERITY_LEVELS.include?(alert[:severity]) }
+        .map do |alert|
+          severity_label = alert[:severity].to_s.upcase
+          "[HAZARD #{severity_label}] #{alert[:title]}: #{alert[:detail]} #{alert[:recommendation]}".strip
+        end
+    end
+
     def self.parse_non_negative_float(value)
       return 0.0 if value.nil?
 
@@ -146,11 +177,11 @@ module Exporters
     end
     private_class_method :parse_non_negative_float
 
-    def self.apply_residual_safely!(hundredths, residual)
+    def self.apply_residual_safely!(hundredths, residual, fired_keys = FIRED_OXIDES)
       step = residual.positive? ? 1 : -1
       remaining = residual.abs
 
-      ordered_keys = FIRED_OXIDES.sort_by { |key| -hundredths[key] }
+      ordered_keys = fired_keys.sort_by { |key| -hundredths[key] }
       ordered_keys.each do |key|
         break if remaining.zero?
 
@@ -171,19 +202,23 @@ module Exporters
     end
 
     def call
-      normalized = self.class.normalize_oxides(@assay_result.oxides)
+      normalized = self.class.normalize_oxides(
+        @assay_result.oxides,
+        minor_oxides: @assay_result.respond_to?(:minor_oxides) ? @assay_result.minor_oxides : nil
+      )
       loi = normalized.fetch("LOI")
+      fired_keys = normalized.keys - [ "LOI" ]
 
-      moles_per_gram = FIRED_OXIDES.each_with_object({}) do |oxide, acc|
+      moles_per_gram = fired_keys.each_with_object({}) do |oxide, acc|
         acc[oxide] = (normalized[oxide] / 100.0) / MOLAR_MASSES.fetch(oxide)
       end
 
-      flux_per_gram = FLUX_OXIDES.sum { |oxide| moles_per_gram[oxide] }
+      flux_per_gram = (fired_keys & ALL_FLUX_OXIDES).sum { |oxide| moles_per_gram[oxide] }
       raw_equivalent = flux_per_gram.positive? ? (1.0 / flux_per_gram) : 100.0
       equivalent = raw_equivalent.round(2)
       formulaweight = (equivalent * (1.0 - loi / 100.0)).round(2)
 
-      fields = FIRED_OXIDES.filter_map do |oxide|
+      fields = fired_keys.filter_map do |oxide|
         pct = normalized[oxide]
         next unless pct.positive?
 
@@ -194,7 +229,7 @@ module Exporters
         }
       end
 
-      oxide_analysis = FIRED_OXIDES.each_with_object({}) do |oxide, acc|
+      oxide_analysis = fired_keys.each_with_object({}) do |oxide, acc|
         pct = normalized[oxide]
         acc[oxide] = pct if pct.positive?
       end
@@ -207,7 +242,7 @@ module Exporters
         "molecularweight" => 100.0,
         "equivalent" => equivalent,
         "formulaweight" => formulaweight,
-        "rawformula" => build_rawformula(normalized, loi),
+        "rawformula" => build_rawformula(normalized, fired_keys, loi),
         "analysis" => oxide_analysis,
         "oxideAnalysis" => oxide_analysis,
         "oxides" => normalized,
@@ -220,8 +255,8 @@ module Exporters
 
     private
 
-    def build_rawformula(normalized, loi)
-      entries = FIRED_OXIDES.filter_map do |oxide|
+    def build_rawformula(normalized, fired_keys, loi)
+      entries = fired_keys.filter_map do |oxide|
         pct = normalized[oxide]
         next unless pct.positive?
 
@@ -271,6 +306,10 @@ module Exporters
         formatted = self.class.format_reasoning_entry(entry)
         lines << formatted unless formatted.empty?
       end
+
+      lines.concat(
+        self.class.high_severity_hazard_notes(assay_result: @assay_result, user_sample: @sample)
+      )
 
       lines.uniq
     end

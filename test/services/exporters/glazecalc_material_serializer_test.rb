@@ -260,5 +260,70 @@ module Exporters
         Object.send(:remove_const, :Chemistry) unless chemistry_existed
       end
     end
+
+    test "includes minor ceramic oxides normalized to exact 100.00% and appends high-severity hazard notes" do
+      pegmatite_assay = @sample.assay_results.create!(
+        source_type: :verified_lab_icpms,
+        analysis_method: "lab_icpms",
+        oxides: {
+          "SiO2" => 65.0,
+          "Al2O3" => 18.0,
+          "K2O" => 8.0,
+          "Na2O" => 3.5,
+          "CaO" => 1.5,
+          "Fe2O3" => 1.0,
+          "LOI" => 3.0
+        },
+        minor_oxides: {
+          "Li2O" => 2.8,
+          "B2O3" => 1.2,
+          "BaO" => 2.6,
+          "ZrO2" => 0.4,
+          "SO3" => 0.6,
+          "F" => 0.4
+        },
+        trace_elements_ppm: { "As" => 95.0, "Rb" => 520.0 }
+      )
+
+      payload = GlazecalcMaterialSerializer.call(pegmatite_assay)
+
+      # Exact 100.00% sum across major + non-volatile minor fired oxides + LOI
+      assert_equal 100.0, payload["oxides"].values.sum.round(2)
+      assert_equal 100.0, (payload["oxideAnalysis"].values.sum + payload["loi"]).round(2)
+      assert_equal 100.0, (payload["fields"].sum { |f| f["amount"].to_f } + payload["loi"]).round(2)
+
+      field_names = payload["fields"].map { |f| f["name"] }
+      %w[Li2O B2O3 BaO ZrO2].each do |minor_ox|
+        assert_includes field_names, minor_ox
+        assert payload["oxideAnalysis"].key?(minor_ox)
+        assert_includes payload["rawformula"], minor_ox
+      end
+      assert_not_includes field_names, "SO3"
+      assert_not_includes field_names, "F"
+
+      # Stoichiometry identity holds for minor oxides including Li2O and BaO fluxes
+      payload["fields"].each do |field|
+        oxide = field["name"]
+        expected_unity = (field["amount"].to_f / 100.0 / MOLAR_MASSES.fetch(oxide)) * payload["equivalent"]
+        assert_in_delta expected_unity, field["amountUnity"], [ expected_unity * 0.015, 0.001 ].max,
+          "amountUnity mismatch for #{oxide}"
+      end
+
+      flux_unity = payload["fields"]
+        .select { |f| GlazecalcMaterialSerializer::ALL_FLUX_OXIDES.include?(f["name"]) }
+        .sum { |f| f["amountUnity"] }
+      assert_in_delta 1.0, flux_unity, 0.001
+
+      assert payload["umf"]["fluxes"].key?("Li2O")
+      assert payload["umf"]["fluxes"].key?("BaO")
+      assert payload["umf"]["intermediates"].key?("B2O3")
+      assert payload["umf"]["glass_formers"].key?("ZrO2")
+
+      # High-severity hazard notices appended to notes
+      assert payload["notes"].any? { |n| n.include?("[HAZARD DANGER]") && n.include?("Arsenic") }
+      assert payload["notes"].any? { |n| n.include?("[HAZARD DANGER]") && n.include?("Barium") }
+      assert payload["notes"].any? { |n| n.include?("[HAZARD DANGER]") && n.include?("HF Kiln Gas") }
+      assert payload["notes"].any? { |n| n.include?("[HAZARD WARNING]") && n.include?("Sulfur") }
+    end
   end
 end

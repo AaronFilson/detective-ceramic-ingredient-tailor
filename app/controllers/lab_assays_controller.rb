@@ -7,15 +7,28 @@ class LabAssaysController < ApplicationController
 
   def create
     permitted = lab_assay_params
-    @result = Lab::VerifiedAssayImporter.call(
-      user_sample: @sample,
-      source_type: permitted[:source_type].presence || :verified_lab_xrf,
-      oxides: permitted[:oxides]&.to_h,
-      csv_file: permitted[:csv_file],
-      lab_name: permitted[:lab_name],
-      lab_report_ref: permitted[:lab_report_ref],
-      promote_to_reference: permitted[:promote_to_reference]
-    )
+    @result = if pxrf_submission?(permitted)
+      Lab::PxrfCsvImporter.call(
+        user_sample: @sample,
+        csv_file: permitted[:csv_file],
+        dry_weight_g: permitted[:dry_weight_g],
+        fired_weight_g: permitted[:fired_weight_g],
+        measured_loi_pct: permitted[:measured_loi_pct],
+        lab_name: permitted[:lab_name],
+        lab_report_ref: permitted[:lab_report_ref],
+        promote_to_reference: permitted[:promote_to_reference]
+      )
+    else
+      Lab::VerifiedAssayImporter.call(
+        user_sample: @sample,
+        source_type: permitted[:source_type].presence || :verified_lab_xrf,
+        oxides: permitted[:oxides]&.to_h,
+        csv_file: permitted[:csv_file],
+        lab_name: permitted[:lab_name],
+        lab_report_ref: permitted[:lab_report_ref],
+        promote_to_reference: permitted[:promote_to_reference]
+      )
+    end
 
     @assay_result = @sample.latest_assay_result
     @heuristic_assay = @sample.latest_heuristic_assay_result
@@ -85,22 +98,37 @@ class LabAssaysController < ApplicationController
     @sample = UserSample.find(params[:sample_id])
   end
 
+  def pxrf_submission?(permitted)
+    permitted[:source_type].to_s == "pxrf" || permitted[:analysis_method].to_s == "pxrf"
+  end
+
   def lab_assay_params
     raw = params.fetch(:lab_assay, {})
     return {} unless raw.respond_to?(:permit)
 
     raw.permit(
       :source_type,
+      :analysis_method,
       :lab_name,
       :lab_report_ref,
       :promote_to_reference,
       :csv_file,
+      :dry_weight_g,
+      :fired_weight_g,
+      :measured_loi_pct,
       oxides: PERMITTED_OXIDE_KEYS
     )
   end
 
   def build_create_notice(result)
-    method_label = result.assay_result.verified_lab_icpms? ? "Verified Lab ICP-MS" : "Verified Lab XRF"
+    method_label = if result.assay_result.analysis_method == "pxrf"
+      "Handheld pXRF"
+    elsif result.assay_result.verified_lab_icpms?
+      "Verified Lab ICP-MS"
+    else
+      "Verified Lab XRF"
+    end
+
     if result.reference_assay.present?
       "#{method_label} assay logged and promoted to the Regional Spatial Atlas."
     else

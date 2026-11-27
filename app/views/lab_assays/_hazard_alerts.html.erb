@@ -1,0 +1,118 @@
+<% sample = local_assigns[:sample] %>
+<% assay_result = local_assigns[:assay_result] %>
+<% if sample.present? || assay_result.present? %>
+  <% report = Chemistry::HazardScreenerService.call(
+    assay_result: assay_result,
+    user_sample: sample,
+    nearby_minerals: local_assigns[:nearby_minerals],
+    nearby_xrd: local_assigns[:nearby_xrd]
+  ) %>
+
+  <% severity_styles = {
+    danger: {
+      card: "border-red-300 bg-red-50/90 text-red-950",
+      badge: "bg-red-700 text-white",
+      label: "Danger"
+    },
+    warning: {
+      card: "border-amber-300 bg-amber-50/90 text-amber-950",
+      badge: "bg-amber-600 text-white",
+      label: "Warning"
+    },
+    info: {
+      card: "border-[#1E4E79]/25 bg-[#1E4E79]/5 text-stone-900",
+      badge: "bg-[#1E4E79] text-white",
+      label: "Info"
+    }
+  } %>
+
+  <% category_labels = {
+    health: "Health & PPE",
+    kiln: "Kiln & Firing",
+    processing: "Hard-Rock Milling",
+    pxrf: "pXRF & Pathfinder",
+    mineralogy: "XRD Mineralogy"
+  } %>
+
+  <div
+    id="hazard_alerts_panel"
+    class="space-y-2.5"
+    data-hazard-alerts
+    data-highest-severity="<%= report.highest_severity || 'clear' %>"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Studio Safety, Kiln &amp; Mineralogy Screening
+        </h3>
+
+        <% if report.food_safe_caution? %>
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-100 text-red-900 border border-red-300"
+            data-food-safe-caution
+          >
+            Not Food-Safe Caution
+          </span>
+        <% end %>
+
+        <% if report.k_rb_ratio.present? %>
+          <% is_lct = report.k_rb_ratio < Chemistry::HazardScreenerService::LCT_KRB_THRESHOLD %>
+          <span
+            class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-[11px] font-semibold border <%= is_lct ? 'bg-indigo-100 text-indigo-950 border-indigo-300' : 'bg-stone-100 text-stone-700 border-stone-300' %>"
+            data-krb-pathfinder
+          >
+            <span>K/Rb <%= format("%.1f", report.k_rb_ratio) %></span>
+            <% if is_lct %>
+              <span class="font-sans text-[10px] font-bold uppercase tracking-wide text-indigo-800">LCT Li Signal</span>
+            <% end %>
+          </span>
+        <% end %>
+      </div>
+
+      <span class="font-mono text-[11px] text-stone-500">
+        <%= report.summary %>
+      </span>
+    </div>
+
+    <% if report.alerts.any? %>
+      <ul class="space-y-2" data-hazard-alert-list>
+        <% report.alerts.each do |alert| %>
+          <% style = severity_styles.fetch(alert[:severity], severity_styles[:info]) %>
+          <% category_label = category_labels.fetch(alert[:category], alert[:category].to_s.titleize) %>
+          <li
+            class="rounded-xl border px-3.5 py-2.5 space-y-1.5 text-xs <%= style[:card] %>"
+            data-hazard-code="<%= alert[:code] %>"
+            data-hazard-severity="<%= alert[:severity] %>"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider <%= style[:badge] %>">
+                <%= style[:label] %>
+              </span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/80 text-stone-700 border border-stone-300/70">
+                <%= category_label %>
+              </span>
+              <strong class="font-semibold text-stone-950"><%= alert[:title] %></strong>
+            </div>
+
+            <p class="leading-relaxed text-stone-800"><%= alert[:detail] %></p>
+
+            <% if alert[:recommendation].present? %>
+              <p class="text-[11px] leading-relaxed text-stone-700">
+                <span class="font-semibold text-stone-900">Studio guidance:</span>
+                <%= alert[:recommendation] %>
+              </p>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <div
+        class="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2 text-xs text-emerald-900 flex items-center gap-2"
+        data-hazard-status="clear"
+      >
+        <span class="w-2 h-2 rounded-full bg-emerald-600 shrink-0"></span>
+        <span>All clear — no heavy-metal, kiln gas, sulfide, hard-rock silica, or XRD mineralogy hazards flagged.</span>
+      </div>
+    <% end %>
+  </div>
+<% end %>

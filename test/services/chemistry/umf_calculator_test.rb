@@ -130,5 +130,119 @@ module Chemistry
       assert_equal 100.0, empty_umf["equivalent_weight"]
       assert_equal 100.0, empty_umf["formula_weight"]
     end
+
+    test "places minor ceramic oxides into exact glazecalc R2O/RO/R2O3/RO2 groups via minor_oxides keyword" do
+      # Spodumene-bearing pegmatite glaze rock with Li2O (R2O), BaO/ZnO/SrO/CuO/CoO/NiO (RO),
+      # B2O3/Cr2O3/Pr2O3 (R2O3), ZrO2/SnO2/V2O5/CeO2 (RO2), plus volatile SO3 & F (excluded!).
+      majors = {
+        "SiO2"  => 62.0,
+        "Al2O3" => 17.5,
+        "Fe2O3" => 0.5,
+        "CaO"   => 1.5,
+        "MgO"   => 0.5,
+        "Na2O"  => 2.0,
+        "K2O"   => 4.0,
+        "LOI"   => 2.0
+      }
+      minors = {
+        "Li2O"  => 2.5,
+        "B2O3"  => 1.5,
+        "SrO"   => 0.5,
+        "BaO"   => 1.0,
+        "ZnO"   => 0.8,
+        "ZrO2"  => 1.2,
+        "SnO2"  => 0.6,
+        "Cr2O3" => 0.2,
+        "CuO"   => 0.4,
+        "CoO"   => 0.2,
+        "NiO"   => 0.2,
+        "V2O5"  => 0.3,
+        "CeO2"  => 0.4,
+        "Pr2O3" => 0.2,
+        "SO3"   => 0.8,
+        "F"     => 0.6
+      }
+
+      umf = Chemistry::UmfCalculator.call(majors, minor_oxides: minors)
+
+      # Exact group placement matching CeramicOxides::ALL_OXIDE_GROUPS
+      %w[CaO MgO MnO SrO BaO ZnO CuO CoO NiO Na2O K2O Li2O].each do |flux_ox|
+        assert_includes umf["fluxes"].keys, flux_ox
+      end
+      %w[Al2O3 Fe2O3 B2O3 Cr2O3 Pr2O3].each do |inter_ox|
+        assert_includes umf["intermediates"].keys, inter_ox
+      end
+      %w[SiO2 TiO2 P2O5 ZrO2 SnO2 V2O5 CeO2].each do |gf_ox|
+        assert_includes umf["glass_formers"].keys, gf_ox
+      end
+
+      # Volatiles SO3 and F are excluded from fired UMF
+      assert_not_includes umf["oxides"].keys, "SO3"
+      assert_not_includes umf["oxides"].keys, "F"
+      assert_not_includes umf["oxides"].keys, "LOI"
+
+      # Hand-check R2O, RO, flux_total, equivalent_weight, formula_weight
+      mw = CeramicOxides::ALL_OXIDE_MOLAR_WEIGHTS
+      r2o_moles = (2.0 / mw["Na2O"]) + (4.0 / mw["K2O"]) + (2.5 / mw["Li2O"])
+      ro_moles = (1.5 / mw["CaO"]) + (0.5 / mw["MgO"]) + (0.5 / mw["SrO"]) +
+        (1.0 / mw["BaO"]) + (0.8 / mw["ZnO"]) + (0.4 / mw["CuO"]) +
+        (0.2 / mw["CoO"]) + (0.2 / mw["NiO"])
+      flux_moles = r2o_moles + ro_moles
+      expected_eq = 100.0 / flux_moles
+      expected_fw = expected_eq * (1.0 - 2.0 / 100.0)
+
+      assert_in_delta 1.0, umf["flux_total"], 0.0005
+      assert_in_delta r2o_moles / flux_moles, umf["r2o_total"], 0.0005
+      assert_in_delta ro_moles / flux_moles, umf["ro_total"], 0.0005
+      assert_in_delta expected_eq, umf["equivalent_weight"], 0.02
+      assert_in_delta expected_fw, umf["formula_weight"], 0.02
+      assert_in_delta (2.5 / mw["Li2O"]) / flux_moles, umf["fluxes"]["Li2O"], 0.0005
+      assert_in_delta (1.5 / mw["B2O3"]) / flux_moles, umf["intermediates"]["B2O3"], 0.0005
+      assert_in_delta (1.2 / mw["ZrO2"]) / flux_moles, umf["glass_formers"]["ZrO2"], 0.0005
+    end
+
+    test "automatically picks up positive minor ceramic oxides present directly in oxides_hash" do
+      spodumene = {
+        "SiO2"  => 64.58,
+        "Al2O3" => 27.40,
+        "Li2O"  => 8.02,
+        "LOI"   => 0.0
+      }
+
+      umf = Chemistry::UmfCalculator.call(spodumene)
+
+      # Ideal spodumene Li2O.Al2O3.4SiO2
+      assert_equal 1.0, umf["flux_total"]
+      assert_equal 1.0, umf["r2o_total"]
+      assert_equal 0.0, umf["ro_total"]
+      assert_equal 1.0, umf["fluxes"]["Li2O"]
+      assert_in_delta 1.0, umf["intermediates"]["Al2O3"], 0.01
+      assert_in_delta 4.0, umf["glass_formers"]["SiO2"], 0.02
+      assert_in_delta 372.57, umf["equivalent_weight"], 0.5
+    end
+
+    test "returns byte-for-byte identical keys when minor_oxides is empty or all-zero" do
+      base = { "SiO2" => 65.0, "Al2O3" => 20.0, "K2O" => 5.0, "CaO" => 2.0, "LOI" => 8.0 }
+
+      plain = Chemistry::UmfCalculator.call(base)
+      with_empty = Chemistry::UmfCalculator.call(base, minor_oxides: {})
+      with_zeros = Chemistry::UmfCalculator.call(base, minor_oxides: { "Li2O" => 0.0, "B2O3" => 0.0, "SO3" => 0.5, "F" => 0.3 })
+
+      assert_equal plain, with_empty
+      assert_equal plain, with_zeros
+    end
+
+    test "accepts unbraced string-keyed and symbol-keyed oxide arguments cleanly" do
+      from_strings = Chemistry::UmfCalculator.call(
+        "SiO2" => 64.76, "Al2O3" => 18.32, "K2O" => 16.92, "LOI" => 0.0
+      )
+      from_symbols = Chemistry::UmfCalculator.call(
+        SiO2: 64.76, Al2O3: 18.32, K2O: 16.92, LOI: 0.0
+      )
+
+      assert_equal from_strings, from_symbols
+      assert_equal 1.0, from_strings["flux_total"]
+      assert_in_delta 6.0, from_strings["si_al_ratio"], 0.01
+    end
   end
 end

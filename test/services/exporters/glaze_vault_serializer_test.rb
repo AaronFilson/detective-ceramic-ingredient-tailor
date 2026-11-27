@@ -260,5 +260,44 @@ module Exporters
       assert_equal "25", sheet["waterOfPlasticity"]
       assert_equal 2, payload.dig("provenance", "field_observations").length
     end
+
+    test "exports minor ceramic oxides summing to 100.00%, provenance trace elements, and hazard notes" do
+      sample = UserSample.create!(title: "Black Hills Spodumene Pegmatite", material_category: :crushed_rock)
+      sample.assay_results.create!(
+        source_type: :verified_lab_xrf,
+        analysis_method: "pxrf",
+        oxides: {
+          "SiO2" => 66.0, "Al2O3" => 18.5, "K2O" => 7.5, "Na2O" => 3.0,
+          "CaO" => 1.0, "Fe2O3" => 1.0, "LOI" => 3.0
+        },
+        minor_oxides: { "Li2O" => 2.4, "SrO" => 0.6, "BaO" => 2.5, "SO3" => 0.4 },
+        trace_elements_ppm: { "Rb" => 580.0, "Pb" => 180.0, "U" => 65.0 }
+      )
+
+      payload = GlazeVaultSerializer.call(sample)
+      material = payload["materials"].first
+      oxide_names = material["oxides"].map { |o| o["oxide"] }
+
+      assert_includes oxide_names, "Li2O"
+      assert_includes oxide_names, "SrO"
+      assert_includes oxide_names, "BaO"
+      assert_not_includes oxide_names, "SO3"
+
+      total = material["oxides"].sum { |o| o["percent"].to_f } + material["loi"].to_f
+      assert_in_delta 100.0, total, 0.001
+
+      assay_prov = payload.dig("provenance", "assay_result")
+      assert_equal "pxrf", assay_prov["analysis_method"]
+      assert_in_delta 2.4, assay_prov.dig("minor_oxides", "Li2O"), 0.001
+      assert_in_delta 580.0, assay_prov.dig("trace_elements_ppm", "Rb"), 0.001
+      assert_in_delta 180.0, assay_prov.dig("trace_elements_ppm", "Pb"), 0.001
+      assert assay_prov.dig("umf_formula", "fluxes").key?("Li2O")
+
+      assert_includes material["notes"], "[HAZARD DANGER]"
+      assert_includes material["notes"], "Lead"
+      assert_includes material["notes"], "Barium"
+      assert_includes material["notes"], "Radioactive"
+      assert_includes material["notes"], "Hard-Rock"
+    end
   end
 end
