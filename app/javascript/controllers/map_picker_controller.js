@@ -12,6 +12,7 @@ export default class extends Controller {
     "macrostratOpacity",
     "opacityReadout",
     "referenceToggle",
+    "mineralToggle",
     "coordsDisplay"
   ]
 
@@ -24,6 +25,7 @@ export default class extends Controller {
     macrostratOpacity: { type: Number, default: 0.65 },
     macrostratVisible: { type: Boolean, default: true },
     referenceAssays: { type: Array, default: [] },
+    mineralOccurrences: { type: Array, default: [] },
     boundaryGeojson: { type: String, default: "" },
     boundaryColor: { type: String, default: "#1E4E79" },
     boundaryLabel: { type: String, default: "" }
@@ -45,6 +47,7 @@ export default class extends Controller {
     this.marker = null
     this.macrostratLayer = null
     this.referenceLayerGroup = null
+    this.mineralLayerGroup = null
     this.boundaryLayer = null
   }
 
@@ -91,6 +94,13 @@ export default class extends Controller {
     this.renderReferenceAssays()
     if (!this.hasReferenceToggleTarget || this.referenceToggleTarget.checked) {
       this.referenceLayerGroup.addTo(this.map)
+    }
+
+    // Hard-rock mineral occurrences layer
+    this.mineralLayerGroup = L.layerGroup()
+    this.renderMineralOccurrences()
+    if (!this.hasMineralToggleTarget || this.mineralToggleTarget.checked) {
+      this.mineralLayerGroup.addTo(this.map)
     }
 
     // Active geologic unit GeoJSON boundary polygon
@@ -243,6 +253,16 @@ export default class extends Controller {
     }
   }
 
+  toggleMineralOccurrences() {
+    if (!this.map || !this.mineralLayerGroup || !this.hasMineralToggleTarget) return
+
+    if (this.mineralToggleTarget.checked) {
+      this.mineralLayerGroup.addTo(this.map)
+    } else {
+      this.map.removeLayer(this.mineralLayerGroup)
+    }
+  }
+
   // Called on turbo:frame-load of #geologic_unit_card
   handleGeologicUnitLoaded() {
     if (!this.hasGeologicFrameTarget) return
@@ -295,6 +315,60 @@ export default class extends Controller {
         .bindPopup(popupHtml)
         .addTo(this.referenceLayerGroup)
     })
+  }
+
+  renderMineralOccurrences() {
+    const L = window.L
+    if (!this.mineralLayerGroup || !L) return
+
+    this.mineralLayerGroup.clearLayers()
+
+    const diamondIcon = L.divIcon({
+      className: "studio-mineral-marker",
+      html: '<div style="width:12px;height:12px;background:#D97706;border:2px solid #FCFBF8;transform:rotate(45deg);box-shadow:0 1px 4px rgba(28,25,23,0.45);border-radius:2px;"></div>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8]
+    })
+
+    this.mineralOccurrencesValue.forEach((occ) => {
+      if (occ.lat == null || occ.lng == null) return
+
+      const sourceLabel = this.formatMineralSource(occ.source)
+      const commodities = Array.isArray(occ.commodities) ? occ.commodities.filter(Boolean) : []
+      const ceramicMinerals = Array.isArray(occ.ceramic_highlights) && occ.ceramic_highlights.length > 0
+        ? occ.ceramic_highlights
+        : (Array.isArray(occ.minerals) ? occ.minerals.filter(Boolean) : [])
+
+      const popupHtml = `
+        <div class="text-xs space-y-1.5 min-w-[200px]">
+          <div class="flex items-start justify-between gap-2">
+            <div class="font-bold text-stone-900 leading-snug">${this.escapeHtml(occ.name || "Mineral Occurrence")}</div>
+            <span class="shrink-0 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[9px] font-bold uppercase">${this.escapeHtml(sourceLabel)}</span>
+          </div>
+          ${occ.deposit_type ? `<div class="text-[11px] text-stone-600"><span class="font-medium text-stone-500">Type:</span> ${this.escapeHtml(occ.deposit_type)}</div>` : ""}
+          ${commodities.length > 0 ? `<div class="text-[11px] text-stone-700"><span class="font-medium text-stone-500">Commodities:</span> ${this.escapeHtml(commodities.join(", "))}</div>` : ""}
+          ${ceramicMinerals.length > 0 ? `<div class="pt-1 border-t border-stone-200 flex flex-wrap gap-1">${ceramicMinerals.slice(0, 6).map((m) => `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-950 border border-amber-200 text-[10px] font-medium">${this.escapeHtml(m)}</span>`).join("")}</div>` : ""}
+        </div>
+      `
+
+      L.marker([occ.lat, occ.lng], {
+        icon: diamondIcon,
+        zIndexOffset: 200
+      })
+        .bindPopup(popupHtml)
+        .addTo(this.mineralLayerGroup)
+    })
+  }
+
+  formatMineralSource(source) {
+    switch (String(source || "").toLowerCase()) {
+      case "usgs_mrds": return "USGS MRDS"
+      case "mindat": return "Mindat"
+      case "pnw_seed":
+      case "curated_pnw": return "PNW Atlas"
+      default: return source ? String(source).replace(/_/g, " ") : "Mineral"
+    }
   }
 
   renderBoundaryPolygon(geojsonString, color, label) {

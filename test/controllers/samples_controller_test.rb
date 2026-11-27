@@ -427,4 +427,188 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to root_path
   end
+
+  test "GET / renders Hard-Rock Minerals layer toggle and embeds MineralOccurrence JSON payload" do
+    MineralOccurrence.create!(
+      source: "usgs_mrds",
+      external_id: "MRDS-TAC-1",
+      name: "Enumclaw Andesite & Feldspar Quarry",
+      deposit_type: "Volcanic quarry",
+      commodities: [ "Feldspar", "Andesite" ],
+      minerals: [ "Plagioclase", "Quartz" ],
+      latitude: 47.2043,
+      longitude: -121.9915
+    )
+
+    get root_path
+    assert_response :success
+
+    assert_select "input[type='checkbox'][data-map-picker-target='mineralToggle'][data-action='change->map-picker#toggleMineralOccurrences']"
+    assert_includes response.body, "Hard-Rock Minerals (1)"
+
+    root_el = css_select("[data-controller='map-picker']").first
+    payload = JSON.parse(root_el["data-map-picker-mineral-occurrences-value"])
+    assert_equal 1, payload.size
+    assert_equal "Enumclaw Andesite & Feldspar Quarry", payload.first["name"]
+    assert_equal "usgs_mrds", payload.first["source"]
+    assert_equal "Volcanic quarry", payload.first["deposit_type"]
+    assert_includes payload.first["commodities"], "Feldspar"
+    assert_includes payload.first["ceramic_highlights"], "feldspar"
+  end
+
+  test "GET /samples/:id renders Minor / Hard-Rock Glaze Oxides strip when minor_oxides present" do
+    sample = UserSample.create!(
+      title: "Spokane Lithium Pegmatite",
+      material_category: :crushed_rock,
+      latitude: 47.5580,
+      longitude: -117.0780
+    )
+    sample.assay_results.create!(
+      source_type: :verified_lab_xrf,
+      lab_name: "Hard-Rock Lab",
+      oxides: {
+        "SiO2" => 71.0, "Al2O3" => 16.5, "Fe2O3" => 0.4, "CaO" => 0.5,
+        "MgO" => 0.2, "Na2O" => 3.6, "K2O" => 6.4, "TiO2" => 0.05,
+        "P2O5" => 0.15, "MnO" => 0.1, "LOI" => 1.1
+      },
+      minor_oxides: {
+        "Li2O" => 1.42,
+        "B2O3" => 0.35,
+        "BaO" => 0.18,
+        "F" => 0.28
+      },
+      umf_formula: Chemistry::UmfCalculator.call(
+        "SiO2" => 71.0, "Al2O3" => 16.5, "Fe2O3" => 0.4, "CaO" => 0.5,
+        "MgO" => 0.2, "Na2O" => 3.6, "K2O" => 6.4, "TiO2" => 0.05,
+        "P2O5" => 0.15, "MnO" => 0.1, "LOI" => 1.1
+      ),
+      confidence_score: 0.96
+    )
+
+    get sample_path(sample)
+    assert_response :success
+
+    assert_select "[data-minor-oxides-strip]" do
+      assert_includes response.body, "Minor / Hard-Rock Glaze Oxides"
+      assert_select "[data-minor-oxide='Li2O']", text: /1\.42%/
+      assert_select "[data-minor-oxide='B2O3']", text: /0\.35%/
+      assert_select "[data-minor-oxide='BaO']", text: /0\.18%/
+      assert_select "[data-minor-oxide='F']", text: /Volatile/
+    end
+  end
+
+  test "lookup_soil_profile falls back to ISRIC SoilGrids when USDA SSURGO returns nil" do
+    stub_request(:post, "https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest")
+      .to_return(status: 200, body: { Table: [] }.to_json, headers: { "Content-Type" => "application/json" })
+
+    # Placed ~330m north of (51.500, -0.120): outside SSURGO's 250m cache, inside SoilGrids' 500m cache
+    fallback_profile = SoilProfile.create!(
+      mukey: "soilgrids:51.503:-0.120",
+      source: "isric_soilgrids",
+      map_unit_name: "ISRIC SoilGrids v2 (250m Global)",
+      component_name: "Clay Loam",
+      max_clay_pct: 32.0,
+      latitude: 51.503,
+      longitude: -0.120
+    )
+
+    if defined?(Clients::IsricSoilgridsClient)
+      result = SamplesController.lookup_soil_profile(lat: 51.500, lng: -0.120)
+      assert_equal fallback_profile.id, result.id
+    else
+      fake_isric = Module.new do
+        define_singleton_method(:lookup) do |lat:, lng:|
+          @last_call = [ lat, lng ]
+          fallback_profile
+        end
+
+        define_singleton_method(:last_call) { @last_call }
+      end
+
+      Clients.const_set(:IsricSoilgridsClient, fake_isric)
+      begin
+        result = SamplesController.lookup_soil_profile(lat: 51.500, lng: -0.120)
+        assert_equal fallback_profile.id, result.id
+        assert_equal [ 51.5, -0.12 ], fake_isric.last_call
+      ensure
+        Clients.send(:remove_const, :IsricSoilgridsClient)
+      end
+    end
+  end
+
+  test "POST /samples enqueues MineralOccurrenceLookupJob only when no usgs_mrds occurrence exists within 50 km" do
+    if defined?(MineralOccurrenceLookupJob)
+      assert_enqueued_with(job: MineralOccurrenceLookupJob) do
+        post samples_path, params: {
+          user_sample: {
+            title: "First Tacoma Sample",
+            material_category: "wild_clay",
+            latitude: "47.2529",
+            longitude: "-122.4443"
+          }
+        }
+      end
+
+      MineralOccurrence.create!(
+        source: "usgs_mrds",
+        external_id: "MRDS-NEAR-1",
+        name: "Nearby MRDS Deposit",
+        latitude: 47.26,
+        longitude: -122.44
+      )
+
+      assert_no_enqueued_jobs(only: MineralOccurrenceLookupJob) do
+        post samples_path, params: {
+          user_sample: {
+            title: "Second Tacoma Sample",
+            material_category: "wild_clay",
+            latitude: "47.2529",
+            longitude: "-122.4443"
+          }
+        }
+      end
+    else
+      enqueued_calls = []
+      fake_job = Module.new do
+        define_singleton_method(:perform_later) do |lat, lng|
+          enqueued_calls << [ lat, lng ]
+        end
+      end
+
+      Object.const_set(:MineralOccurrenceLookupJob, fake_job)
+      begin
+        post samples_path, params: {
+          user_sample: {
+            title: "First Tacoma Sample",
+            material_category: "wild_clay",
+            latitude: "47.2529",
+            longitude: "-122.4443"
+          }
+        }
+        assert_equal 1, enqueued_calls.size
+        assert_in_delta 47.2529, enqueued_calls.first[0], 0.0001
+        assert_in_delta(-122.4443, enqueued_calls.first[1], 0.0001)
+
+        MineralOccurrence.create!(
+          source: "usgs_mrds",
+          external_id: "MRDS-NEAR-1",
+          name: "Nearby MRDS Deposit",
+          latitude: 47.26,
+          longitude: -122.44
+        )
+
+        post samples_path, params: {
+          user_sample: {
+            title: "Second Tacoma Sample",
+            material_category: "wild_clay",
+            latitude: "47.2529",
+            longitude: "-122.4443"
+          }
+        }
+        assert_equal 1, enqueued_calls.size
+      ensure
+        Object.send(:remove_const, :MineralOccurrenceLookupJob)
+      end
+    end
+  end
 end

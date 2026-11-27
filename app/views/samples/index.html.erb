@@ -11,6 +11,7 @@
   data-map-picker-macrostrat-opacity-value="0.65"
   data-map-picker-macrostrat-visible-value="true"
   data-map-picker-reference-assays-value="<%= @reference_assays_payload.to_json %>"
+  data-map-picker-mineral-occurrences-value="<%= @mineral_occurrences_payload.to_json %>"
   data-map-picker-boundary-geojson-value="<%= geologic_unit_boundary_geojson(@geologic_unit).to_s %>"
   data-map-picker-boundary-color-value="<%= geologic_unit_swatch_color(@geologic_unit) %>"
   data-map-picker-boundary-label-value="<%= @geologic_unit&.name.to_s %>"
@@ -142,6 +143,20 @@
           </label>
           <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#1E4E79]/80 border border-white shadow-sm" title="USGS / EarthChem Reference Assays"></span>
         </div>
+
+        <div class="pt-1.5 border-t border-stone-200/80 flex items-center justify-between gap-2">
+          <label class="inline-flex items-center gap-2 text-stone-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked
+              data-map-picker-target="mineralToggle"
+              data-action="change->map-picker#toggleMineralOccurrences"
+              class="rounded border-stone-400 text-[#D97706] focus:ring-[#D97706]"
+            >
+            <span>Hard-Rock Minerals (<%= @mineral_occurrences_payload.size %>)</span>
+          </label>
+          <span class="inline-block w-2.5 h-2.5 rotate-45 bg-[#D97706] border border-white shadow-sm rounded-[1px]" title="USGS MRDS / Mindat Hard-Rock Mineral Occurrences"></span>
+        </div>
       </div>
 
       <%# Floating Top-Right Coordinates Pill %>
@@ -236,7 +251,16 @@
               lookup_performed: @geologic_unit.present?,
               nearby_assay_count: @reference_assays_payload.size %>
 
-            <%= render "samples/soil_profile_card", soil_profile: @soil_profile %>
+            <%= render "samples/soil_profile_card",
+              soil_profile: @soil_profile,
+              nearby_xrd_assays: @nearby_xrd_assays %>
+
+            <% if lookup_context.exists?("samples/mineral_occurrences_card", [], true) %>
+              <%= render "samples/mineral_occurrences_card",
+                mineral_occurrences: @nearby_mineral_occurrences,
+                lat: @map_lat,
+                lng: @map_lng %>
+            <% end %>
 
             <%= render "samples/sample_form", sample: @sample %>
           </div>
