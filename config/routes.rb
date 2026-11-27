@@ -10,6 +10,8 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   draw(:exports)
+  draw(:lab_assays)
+  draw(:blends)
 
   # Defines the root path route ("/")
   draw(:studio)

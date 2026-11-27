@@ -2,6 +2,7 @@
 
 class AssayResult < ApplicationRecord
   belongs_to :user_sample
+  belongs_to :reference_assay, optional: true
 
   enum :source_type, {
     spatial_heuristic_estimate: 0,
@@ -13,4 +14,8 @@ class AssayResult < ApplicationRecord
   validates :confidence_score,
     numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
     allow_nil: true
+
+  def verified_lab?
+    verified_lab_xrf? || verified_lab_icpms?
+  end
 end

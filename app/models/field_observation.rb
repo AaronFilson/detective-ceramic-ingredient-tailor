@@ -29,6 +29,17 @@ class FieldObservation < ApplicationRecord
   }
 
   validates :shrinkage_percent,
+    :water_of_plasticity,
+    :drying_shrinkage_percent,
+    :firing_shrinkage_percent,
+    :boiling_water_absorption_percent,
     numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 },
     allow_nil: true
+
+  def effective_total_shrinkage
+    return shrinkage_percent.to_f if shrinkage_percent.present?
+    return nil if drying_shrinkage_percent.blank? && firing_shrinkage_percent.blank?
+
+    (drying_shrinkage_percent.to_f + firing_shrinkage_percent.to_f).round(2)
+  end
 end

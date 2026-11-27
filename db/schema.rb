@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -25,6 +25,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
     t.jsonb "reasoning_log", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "lab_name"
+    t.string "lab_report_ref"
+    t.boolean "promoted_to_reference", default: false, null: false
+    t.bigint "reference_assay_id"
+    t.index ["reference_assay_id"], name: "index_assay_results_on_reference_assay_id"
     t.index ["user_sample_id"], name: "index_assay_results_on_user_sample_id"
   end
 
@@ -40,6 +45,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
     t.decimal "shrinkage_percent", precision: 5, scale: 2
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.decimal "water_of_plasticity", precision: 5, scale: 2
+    t.decimal "drying_shrinkage_percent", precision: 5, scale: 2
+    t.decimal "firing_shrinkage_percent", precision: 5, scale: 2
+    t.decimal "boiling_water_absorption_percent", precision: 5, scale: 2
     t.index ["user_sample_id"], name: "index_field_observations_on_user_sample_id"
   end
 
@@ -69,6 +78,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
     t.index ["location"], name: "index_reference_assays_on_location", using: :gist
     t.index ["rock_type"], name: "index_reference_assays_on_rock_type"
     t.index ["source", "external_id"], name: "index_reference_assays_on_source_and_external_id", unique: true
+  end
+
+  create_table "soil_profiles", force: :cascade do |t|
+    t.string "mukey", null: false
+    t.string "map_unit_name"
+    t.string "component_name"
+    t.decimal "component_percent", precision: 5, scale: 2
+    t.jsonb "horizons", default: [], null: false
+    t.decimal "max_clay_pct", precision: 5, scale: 2
+    t.decimal "max_plasticity_index", precision: 5, scale: 2
+    t.decimal "max_caco3_pct", precision: 5, scale: 2
+    t.geography "location", limit: {:srid=>4326, :type=>"st_point", :geographic=>true}
+    t.datetime "fetched_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["location"], name: "index_soil_profiles_on_location", using: :gist
+    t.index ["mukey"], name: "index_soil_profiles_on_mukey", unique: true
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|
@@ -230,8 +256,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
     t.text "notes"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "soil_profile_id"
     t.index ["geologic_unit_id"], name: "index_user_samples_on_geologic_unit_id"
     t.index ["location"], name: "index_user_samples_on_location", using: :gist
+    t.index ["soil_profile_id"], name: "index_user_samples_on_soil_profile_id"
     t.index ["user_id"], name: "index_user_samples_on_user_id"
   end
 
@@ -243,6 +271,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
+  add_foreign_key "assay_results", "reference_assays"
   add_foreign_key "assay_results", "user_samples"
   add_foreign_key "field_observations", "user_samples"
   add_foreign_key "solid_queue_batch_executions", "solid_queue_batches", column: "batch_id", on_delete: :cascade
@@ -254,5 +283,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000008) do
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "user_samples", "geologic_units"
+  add_foreign_key "user_samples", "soil_profiles"
   add_foreign_key "user_samples", "users"
 end
