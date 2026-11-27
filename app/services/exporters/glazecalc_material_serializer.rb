@@ -6,29 +6,33 @@ module Exporters
   # values, exact 100.00% oxide+LOI normalization, UMF breakdown, and provenance.
   class GlazecalcMaterialSerializer
     APPLICATION_NAME = "detective-ceramic-ingredient-tailor"
+    EXPORT_FORMAT = "glazecalc-export"
+    EXPORT_VERSION = 1
 
-    MOLAR_MASSES = {
-      "SiO2"  => 60.08,
-      "Al2O3" => 101.96,
-      "Fe2O3" => 159.69,
-      "CaO"   => 56.08,
-      "MgO"   => 40.30,
-      "Na2O"  => 61.98,
-      "K2O"   => 94.20,
-      "TiO2"  => 79.87,
-      "P2O5"  => 141.94,
-      "MnO"   => 70.94
-    }.freeze
-
-    FIRED_OXIDES = (CeramicOxides::KEYS - [ "LOI" ]).freeze
-    FLUX_OXIDES = %w[CaO MgO Na2O K2O].freeze
-    R2O_OXIDES = %w[Na2O K2O].freeze
-    RO_OXIDES = %w[CaO MgO].freeze
-    INTERMEDIATE_OXIDES = %w[Al2O3 Fe2O3 MnO].freeze
-    GLASS_FORMER_OXIDES = %w[SiO2 TiO2 P2O5].freeze
+    MOLAR_MASSES = Chemistry::UmfCalculator::MOLECULAR_WEIGHTS
+    FIRED_OXIDES = Chemistry::UmfCalculator::FIRED_OXIDES
+    FLUX_OXIDES = Chemistry::UmfCalculator::FLUX_OXIDES
+    R2O_OXIDES = Chemistry::UmfCalculator::R2O_OXIDES
+    RO_OXIDES = Chemistry::UmfCalculator::RO_OXIDES
+    INTERMEDIATE_OXIDES = Chemistry::UmfCalculator::INTERMEDIATE_OXIDES
+    GLASS_FORMER_OXIDES = Chemistry::UmfCalculator::GLASS_FORMER_OXIDES
 
     def self.call(assay_result_or_sample)
       new(assay_result_or_sample).call
+    end
+
+    # Wraps the serialized material in glazecalc's full account-import envelope
+    # (server/lib/import_data.ts: format === "glazecalc-export", version: 1).
+    def self.export_envelope(assay_result_or_sample)
+      material = call(assay_result_or_sample)
+      {
+        "format" => EXPORT_FORMAT,
+        "version" => EXPORT_VERSION,
+        "exportedAt" => Time.current.utc.iso8601,
+        "records" => {
+          "materials" => [ material ]
+        }
+      }
     end
 
     # Resolves either an AssayResult or a UserSample into [user_sample, assay_result].
@@ -68,76 +72,34 @@ module Exporters
       scaled = sanitized.transform_values { |val| val * scale }
       hundredths = scaled.transform_values { |val| (val * 100.0).round }
 
-      # Ensure LOI strictly satisfies 0.0 <= loi < 100.0 (max 99.99%).
-      if hundredths["LOI"] >= 10_000
-        hundredths["LOI"] = 9_999
+      # Ensure LOI strictly satisfies 0.0 <= loi <= 99.90 (glazecalc MCP add_my_material max 99.9).
+      if hundredths["LOI"] > 9_990
+        hundredths["LOI"] = 9_990
       end
 
       largest_fired = FIRED_OXIDES.max_by { |key| scaled[key] }
       residual = 10_000 - hundredths.values.sum
 
       if residual != 0
-        if hundredths[largest_fired] + residual >= 1
+        if hundredths[largest_fired] + residual >= 10
           hundredths[largest_fired] += residual
         else
           apply_residual_safely!(hundredths, residual)
         end
       end
 
-      # Guarantee at least 0.01% fired oxide remains after rounding.
+      # Guarantee at least 0.10% fired oxide remains after rounding.
       if FIRED_OXIDES.sum { |key| hundredths[key] } <= 0
-        hundredths[largest_fired] = 1
-        hundredths["LOI"] = 9_999
+        hundredths[largest_fired] = 10
+        hundredths["LOI"] = 9_990
       end
 
       hundredths.transform_values { |val| (val / 100.0).round(2) }
     end
 
-    # Computes Unity Molecular Formula using Chemistry::UmfCalculator when
-    # available, falling back to an identical stoichiometric calculation.
+    # Computes Unity Molecular Formula via Chemistry::UmfCalculator.
     def self.compute_umf(normalized_oxides)
-      if defined?(Chemistry::UmfCalculator)
-        Chemistry::UmfCalculator.call(normalized_oxides)
-      else
-        compute_umf_inline(normalized_oxides)
-      end
-    end
-
-    def self.compute_umf_inline(normalized_oxides)
-      loi = normalized_oxides.fetch("LOI", 0.0).to_f
-      moles_per_gram = FIRED_OXIDES.each_with_object({}) do |oxide, acc|
-        wt_pct = normalized_oxides.fetch(oxide, 0.0).to_f
-        acc[oxide] = (wt_pct / 100.0) / MOLAR_MASSES.fetch(oxide)
-      end
-
-      flux_per_gram = FLUX_OXIDES.sum { |oxide| moles_per_gram[oxide] }
-      r2o_per_gram = R2O_OXIDES.sum { |oxide| moles_per_gram[oxide] }
-      ro_per_gram = RO_OXIDES.sum { |oxide| moles_per_gram[oxide] }
-
-      raw_equivalent = flux_per_gram.positive? ? (1.0 / flux_per_gram) : 100.0
-      equivalent_weight = raw_equivalent.round(2)
-      formula_weight = (equivalent_weight * (1.0 - loi / 100.0)).round(2)
-
-      unity_oxides = FIRED_OXIDES.each_with_object({}) do |oxide, acc|
-        acc[oxide] = (moles_per_gram[oxide] * raw_equivalent).round(4)
-      end
-
-      si_moles = moles_per_gram["SiO2"]
-      al_moles = moles_per_gram["Al2O3"]
-      si_al_ratio = al_moles.positive? ? (si_moles / al_moles).round(3) : nil
-
-      {
-        "fluxes" => FLUX_OXIDES.each_with_object({}) { |ox, acc| acc[ox] = unity_oxides[ox] },
-        "intermediates" => INTERMEDIATE_OXIDES.each_with_object({}) { |ox, acc| acc[ox] = unity_oxides[ox] },
-        "glass_formers" => GLASS_FORMER_OXIDES.each_with_object({}) { |ox, acc| acc[ox] = unity_oxides[ox] },
-        "oxides" => unity_oxides,
-        "flux_total" => flux_per_gram.positive? ? 1.0 : 0.0,
-        "r2o_total" => (r2o_per_gram * raw_equivalent).round(4),
-        "ro_total" => (ro_per_gram * raw_equivalent).round(4),
-        "si_al_ratio" => si_al_ratio,
-        "equivalent_weight" => equivalent_weight,
-        "formula_weight" => formula_weight
-      }
+      Chemistry::UmfCalculator.call(normalized_oxides)
     end
 
     def self.format_reasoning_entry(entry)
@@ -246,6 +208,7 @@ module Exporters
         "equivalent" => equivalent,
         "formulaweight" => formulaweight,
         "rawformula" => build_rawformula(normalized, loi),
+        "analysis" => oxide_analysis,
         "oxideAnalysis" => oxide_analysis,
         "oxides" => normalized,
         "umf" => self.class.compute_umf(normalized),

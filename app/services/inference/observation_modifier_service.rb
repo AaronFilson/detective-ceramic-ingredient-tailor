@@ -83,7 +83,7 @@ module Inference
           adjust_pool = unpinned_keys.select { |key| rounded[key].positive? }
           adjust_pool = CeramicOxides::KEYS if adjust_pool.empty?
           largest_key = adjust_pool.max_by { |key| rounded[key] }
-          rounded[largest_key] = [rounded[largest_key] + residual, 0.0].max.round(2)
+          rounded[largest_key] = [ rounded[largest_key] + residual, 0.0 ].max.round(2)
         end
       end
 
@@ -132,11 +132,11 @@ module Inference
       return if fizz.nil? || fizz.empty? || fizz == "none"
 
       cao_range = @baseline_ranges["CaO"]
-      upper_spread = [cao_range["q3"] - cao_range["median"], 0.0].max
+      upper_spread = [ cao_range["q3"] - cao_range["median"], 0.0 ].max
 
       case fizz
       when "vigorous"
-        delta_cao = [upper_spread, 5.0].max.clamp(3.0, 8.0)
+        delta_cao = [ upper_spread, 5.0 ].max.clamp(3.0, 8.0)
         delta_loi = (delta_cao * CACO3_LOI_PER_CAO).clamp(2.0, 7.0)
         @working["CaO"] += delta_cao
         @working["LOI"] += delta_loi
@@ -146,7 +146,7 @@ module Inference
           delta_cao, delta_loi
         )
       when "slight"
-        delta_cao = [upper_spread, 1.75].max.clamp(1.0, 2.5)
+        delta_cao = [ upper_spread, 1.75 ].max.clamp(1.0, 2.5)
         delta_loi = (delta_cao * CACO3_LOI_PER_CAO).clamp(0.75, 2.2)
         @working["CaO"] += delta_cao
         @working["LOI"] += delta_loi
@@ -168,8 +168,8 @@ module Inference
 
       # Fired color overrides dark raw clay when organic carbon burns out cleanly
       if raw_class == :iron_rich && fired_class == :low_iron
-        target_fe = [@baseline_ranges["Fe2O3"]["q1"], 1.2].min.clamp(0.3, 1.35)
-        @working["Fe2O3"] = [@working["Fe2O3"], target_fe].min
+        target_fe = [ @baseline_ranges["Fe2O3"]["q1"], 1.2 ].min.clamp(0.3, 1.35)
+        @working["Fe2O3"] = [ @working["Fe2O3"], target_fe ].min
         @working["LOI"] += 1.5
         @fe_max_cap = 1.4
         @confidence_adjustment += 0.08
@@ -196,11 +196,11 @@ module Inference
         fe_q3 = @baseline_ranges["Fe2O3"]["q3"]
         current_fe = @working["Fe2O3"]
         target_fe = if current_fe < 4.0
-          [fe_q3, 5.8].max.clamp(4.5, 8.5)
+          [ fe_q3, 5.8 ].max.clamp(4.5, 8.5)
         elsif current_fe > 9.0
           8.8
         else
-          [current_fe, [fe_q3, 8.5].min].max.clamp(4.2, 8.8)
+          [ current_fe, [ fe_q3, 8.5 ].min ].max.clamp(4.2, 8.8)
         end
 
         @working["Fe2O3"] = target_fe
@@ -212,8 +212,8 @@ module Inference
           source_description, target_fe
         )
       when :low_iron
-        target_fe = [@baseline_ranges["Fe2O3"]["q1"], 1.2].min.clamp(0.3, 1.35)
-        @working["Fe2O3"] = [@working["Fe2O3"], target_fe].min
+        target_fe = [ @baseline_ranges["Fe2O3"]["q1"], 1.2 ].min.clamp(0.3, 1.35)
+        @working["Fe2O3"] = [ @working["Fe2O3"], target_fe ].min
         @fe_max_cap = 1.4
         @confidence_adjustment += (fired_class ? 0.07 : 0.04)
         @reasoning_log << format(
@@ -323,7 +323,7 @@ module Inference
       when "high_plastic"
         @working["Al2O3"] += 3.0
         @working["LOI"] += 2.2
-        si_trim = [@working["SiO2"], 2.5].min
+        si_trim = [ @working["SiO2"], 2.5 ].min
         @working["SiO2"] -= si_trim
         @confidence_adjustment += 0.05
         @reasoning_log << format(
@@ -334,7 +334,7 @@ module Inference
         @working["SiO2"] += 3.0
         @working["K2O"] += 1.0
         @working["Na2O"] += 0.75
-        loi_drop = [@working["LOI"], 3.0].min
+        loi_drop = [ @working["LOI"], 3.0 ].min
         @working["LOI"] -= loi_drop
         @confidence_adjustment += 0.05
         @reasoning_log << format(
@@ -357,7 +357,7 @@ module Inference
         @confidence_adjustment += 0.03
         @reasoning_log << "Fast slaking disintegration indicates unconsolidated clay/silt dispersion: slightly reinforced LOI (+0.80%)."
       when "no_slake"
-        loi_drop = [@working["LOI"], 1.0].min
+        loi_drop = [ @working["LOI"], 1.0 ].min
         @working["LOI"] -= loi_drop
         @confidence_adjustment += 0.03
         @reasoning_log << format(
@@ -398,10 +398,10 @@ module Inference
         base = @baseline_ranges[key]
         new_median = final_oxides[key]
 
-        lower_span = [base["median"] - base["min"], 0.0].max
-        q1_span    = [base["median"] - base["q1"], 0.0].max
-        q3_span    = [base["q3"] - base["median"], 0.0].max
-        upper_span = [base["max"] - base["median"], 0.0].max
+        lower_span = [ base["median"] - base["min"], 0.0 ].max
+        q1_span    = [ base["median"] - base["q1"], 0.0 ].max
+        q3_span    = [ base["q3"] - base["median"], 0.0 ].max
+        upper_span = [ base["max"] - base["median"], 0.0 ].max
 
         r_min = (new_median - lower_span).clamp(0.0, new_median)
         r_q1  = (new_median - q1_span).clamp(r_min, new_median)
@@ -409,9 +409,9 @@ module Inference
         r_max = (new_median + upper_span).clamp(r_q3, 100.0)
 
         if key == "Fe2O3" && @fe_max_cap
-          cap_ceiling = [new_median, 1.5].max
-          r_max = [r_max, cap_ceiling].min
-          r_q3  = [r_q3, r_max].min
+          cap_ceiling = [ new_median, 1.5 ].max
+          r_max = [ r_max, cap_ceiling ].min
+          r_q3  = [ r_q3, r_max ].min
         end
 
         r_min = r_min.round(2)
@@ -446,12 +446,12 @@ module Inference
           else
             (h["value"] || 0.0).to_f
           end
-          median = [median, 0.0].max
+          median = [ median, 0.0 ].max
 
-          min_val = raw_min ? [raw_min, 0.0].max : median
-          max_val = raw_max ? [raw_max, 0.0].max : median
-          min_val = [min_val, median].min
-          max_val = [max_val, median].max
+          min_val = raw_min ? [ raw_min, 0.0 ].max : median
+          max_val = raw_max ? [ raw_max, 0.0 ].max : median
+          min_val = [ min_val, median ].min
+          max_val = [ max_val, median ].max
 
           q1_val = h["q1"].nil? ? (min_val + median) / 2.0 : h["q1"].to_f
           q3_val = h["q3"].nil? ? (median + max_val) / 2.0 : h["q3"].to_f
@@ -467,7 +467,7 @@ module Inference
             "iqr"    => (q3_val - q1_val).round(4)
           }
         elsif entry.is_a?(Numeric)
-          val = [entry.to_f, 0.0].max
+          val = [ entry.to_f, 0.0 ].max
           { "min" => val, "q1" => val, "median" => val, "q3" => val, "max" => val, "iqr" => 0.0 }
         else
           { "min" => 0.0, "q1" => 0.0, "median" => 0.0, "q3" => 0.0, "max" => 0.0, "iqr" => 0.0 }

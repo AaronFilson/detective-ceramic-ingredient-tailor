@@ -33,13 +33,13 @@ class EndToEndPlatformTest < ActionDispatch::IntegrationTest
               type: "Feature",
               geometry: {
                 type: "Polygon",
-                coordinates: [[
-                  [-122.65, 47.10],
-                  [-122.20, 47.10],
-                  [-122.20, 47.40],
-                  [-122.65, 47.40],
-                  [-122.65, 47.10]
-                ]]
+                coordinates: [ [
+                  [ -122.65, 47.10 ],
+                  [ -122.20, 47.10 ],
+                  [ -122.20, 47.40 ],
+                  [ -122.65, 47.40 ],
+                  [ -122.65, 47.10 ]
+                ] ]
               },
               properties: {
                 map_id: 472_529,
@@ -143,7 +143,7 @@ class EndToEndPlatformTest < ActionDispatch::IntegrationTest
     gc.fetch("fields").each do |field|
       mw = MOLECULAR_WEIGHTS.fetch(field.fetch("name"))
       expected_unity = (field.fetch("amount").to_f / 100.0 / mw) * equivalent
-      assert_in_delta expected_unity, field.fetch("amountUnity").to_f, [expected_unity * 0.01, 0.0005].max
+      assert_in_delta expected_unity, field.fetch("amountUnity").to_f, [ expected_unity * 0.01, 0.0005 ].max
     end
 
     # 5a. Export via /samples/:id/export/glaze_vault.json -> Glaze Vault v1 archive + provenance

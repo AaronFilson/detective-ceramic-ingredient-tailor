@@ -17,6 +17,7 @@ module Inference
     LOCAL_RADIUS_METERS = 15_000
     REGIONAL_RADIUS_METERS = 50_000
     MIN_SPATIAL_MATCHES = 5
+    MAX_GLOBAL_ASSAYS = 500
     RANGE_PRECISION = 3
     OXIDE_PRECISION = 2
 
@@ -39,22 +40,22 @@ module Inference
     }.freeze
 
     LITHOLOGY_KEYWORD_RULES = [
-      [/\b(?:kaolin|china\s+clay|residual\s+clay|bauxite|laterite)\b/i, %w[kaolin_clay]],
-      [/\b(?:glacial|till|drift|moraine|outwash|glaciolacustrine|lacustrine)\b/i, %w[glacial_clay marine_clay alluvial_clay clay]],
-      [/\b(?:glaciomarine|marine|estuar\w*|tidal)\b/i, %w[marine_clay glacial_clay clay shale]],
-      [/\b(?:alluvi\w*|fluvial|river|floodplain|delta\w*|terrace)\b/i, %w[alluvial_clay glacial_clay clay siltstone]],
-      [/\b(?:siltstone|silt)\b/i, %w[siltstone shale alluvial_clay]],
-      [/\b(?:shale|mudstone|claystone|argill\w*)\b/i, %w[shale siltstone mudstone clay]],
-      [/\b(?:clay|mud|loam|loess|marl)\b/i, %w[glacial_clay alluvial_clay marine_clay kaolin_clay clay mudstone shale]],
-      [/\b(?:basalt\w*|mafic|diabase|dolerite|scoria|trap)\b/i, %w[basalt gabbro]],
-      [/\b(?:andesit\w*|lahar|dacit\w*)\b/i, %w[andesite basalt]],
-      [/\b(?:granodiorit\w*|tonalit\w*|diorit\w*|monzonit\w*|batholith|pluton\w*)\b/i, %w[granodiorite granite]],
-      [/\b(?:granit\w*|pegmatit\w*|feldspar|syenit\w*|gneiss)\b/i, %w[granite granodiorite]],
-      [/\b(?:rhyolit\w*|obsidian|pumice|tuff|ignimbrite|ash[\s-]?flow)\b/i, %w[rhyolite andesite]],
-      [/\b(?:gabbro\w*|ophiolit\w*|ultramafic|peridotit\w*|serpentinit\w*)\b/i, %w[gabbro basalt]],
-      [/\b(?:limestone|calcite|carbonat\w*|dolomit\w*|marble|chalk|travertine)\b/i, %w[limestone]],
-      [/\b(?:volcanic|extrusive|lava)\b/i, %w[basalt andesite rhyolite]],
-      [/\b(?:wood\s*ash|plant\s*ash)\b/i, %w[wood_ash ash]]
+      [ /\b(?:kaolin|china\s+clay|residual\s+clay|bauxite|laterite)\b/i, %w[kaolin_clay] ],
+      [ /\b(?:glacial|till|drift|moraine|outwash|glaciolacustrine|lacustrine)\b/i, %w[glacial_clay marine_clay alluvial_clay clay] ],
+      [ /\b(?:glaciomarine|marine|estuar\w*|tidal)\b/i, %w[marine_clay glacial_clay clay shale] ],
+      [ /\b(?:alluvi\w*|fluvial|river|floodplain|delta\w*|terrace)\b/i, %w[alluvial_clay glacial_clay clay siltstone] ],
+      [ /\b(?:siltstone|silt)\b/i, %w[siltstone shale alluvial_clay] ],
+      [ /\b(?:shale|mudstone|claystone|argill\w*)\b/i, %w[shale siltstone mudstone clay] ],
+      [ /\b(?:clay|mud|loam|loess|marl)\b/i, %w[glacial_clay alluvial_clay marine_clay kaolin_clay clay mudstone shale] ],
+      [ /\b(?:basalt\w*|mafic|diabase|dolerite|scoria|trap)\b/i, %w[basalt gabbro] ],
+      [ /\b(?:andesit\w*|lahar|dacit\w*)\b/i, %w[andesite basalt] ],
+      [ /\b(?:granodiorit\w*|tonalit\w*|diorit\w*|monzonit\w*|batholith|pluton\w*)\b/i, %w[granodiorite granite] ],
+      [ /\b(?:granit\w*|pegmatit\w*|feldspar|syenit\w*|gneiss)\b/i, %w[granite granodiorite] ],
+      [ /\b(?:rhyolit\w*|obsidian|pumice|tuff|ignimbrite|ash[\s-]?flow)\b/i, %w[rhyolite andesite] ],
+      [ /\b(?:gabbro\w*|ophiolit\w*|ultramafic|peridotit\w*|serpentinit\w*)\b/i, %w[gabbro basalt] ],
+      [ /\b(?:limestone|calcite|carbonat\w*|dolomit\w*|marble|chalk|travertine)\b/i, %w[limestone] ],
+      [ /\b(?:volcanic|extrusive|lava)\b/i, %w[basalt andesite rhyolite] ],
+      [ /\b(?:wood\s*ash|plant\s*ash)\b/i, %w[wood_ash ash] ]
     ].freeze
 
     GENERIC_LITHOLOGY_STOPWORDS = %w[
@@ -222,7 +223,7 @@ module Inference
       return tokens if category_types.empty?
 
       tokens.select do |token|
-        mapped = map_lithology_terms_to_rock_types([token])
+        mapped = map_lithology_terms_to_rock_types([ token ])
         mapped.empty? || (mapped & category_types).any?
       end
     end
@@ -239,7 +240,7 @@ module Inference
         )
         if tier1[:assays].size >= MIN_SPATIAL_MATCHES
           @reasoning_log << "Tier 1 hit (15 km radius, #{tier1[:label]}): matched #{tier1[:assays].size} local reference assays."
-          return [tier1[:assays], :local_15km, LOCAL_RADIUS_METERS]
+          return [ tier1[:assays], :local_15km, LOCAL_RADIUS_METERS ]
         else
           @reasoning_log << "Tier 1 fallback (15 km radius, #{tier1[:label]}): found #{tier1[:assays].size} assay(s) (minimum #{MIN_SPATIAL_MATCHES} required); expanding to 50 km."
         end
@@ -252,7 +253,7 @@ module Inference
         )
         if tier2[:assays].size >= MIN_SPATIAL_MATCHES
           @reasoning_log << "Tier 2 hit (50 km radius, #{tier2[:label]}): matched #{tier2[:assays].size} regional reference assays."
-          return [tier2[:assays], :regional_50km, REGIONAL_RADIUS_METERS]
+          return [ tier2[:assays], :regional_50km, REGIONAL_RADIUS_METERS ]
         else
           @reasoning_log << "Tier 2 fallback (50 km radius, #{tier2[:label]}): found #{tier2[:assays].size} assay(s) (minimum #{MIN_SPATIAL_MATCHES} required)."
         end
@@ -264,7 +265,7 @@ module Inference
           tier3 = valid_oxide_assays(spatial_scope(lat, lng, REGIONAL_RADIUS_METERS))
           if tier3.size >= MIN_SPATIAL_MATCHES
             @reasoning_log << "Tier 3 hit (50 km radius, unfiltered): matched #{tier3.size} regional assays across local rock types."
-            return [tier3, :regional_50km_unfiltered, REGIONAL_RADIUS_METERS]
+            return [ tier3, :regional_50km_unfiltered, REGIONAL_RADIUS_METERS ]
           else
             @reasoning_log << "Tier 3 fallback (50 km radius, unfiltered): found #{tier3.size} assay(s) (minimum #{MIN_SPATIAL_MATCHES} required); falling back to global lithology/category match."
           end
@@ -273,16 +274,16 @@ module Inference
         @reasoning_log << "No valid GPS coordinates on sample; skipping spatial radius tiers (15 km / 50 km) and querying global reference assays."
       end
 
-      # Tier 4: Global lithology/category-only query
-      tier4 = match_filtered_in_scope(ReferenceAssay.all, filter_plan, min_count: 1)
+      # Tier 4: Global lithology/category-only query (bounded for large USGS/EarthChem tables)
+      tier4 = match_filtered_in_scope(ReferenceAssay.order(id: :desc).limit(MAX_GLOBAL_ASSAYS), filter_plan, min_count: 1)
       if tier4[:assays].any?
         @reasoning_log << "Tier 4 hit (global lithology/category, #{tier4[:label]}): matched #{tier4[:assays].size} reference assay(s)."
-        return [tier4[:assays], :lithology_global, nil]
+        return [ tier4[:assays], :lithology_global, nil ]
       end
 
       # Tier 5: Built-in geological category defaults
       @reasoning_log << "Tier 5 fallback (category defaults): no matching reference assays found; using built-in '#{category}' baseline oxide profile."
-      [[], :category_default, nil]
+      [ [], :category_default, nil ]
     end
 
     def spatial_scope(lat, lng, radius_meters)
@@ -370,7 +371,7 @@ module Inference
       raw_medians = {}
 
       CeramicOxides::KEYS.each do |oxide|
-        values = assays.map { |assay| [assay.oxide_value(oxide) || 0.0, 0.0].max }.sort
+        values = assays.map { |assay| [ assay.oxide_value(oxide) || 0.0, 0.0 ].max }.sort
         min_v = values.first.round(RANGE_PRECISION)
         q1_v = percentile(values, 0.25).round(RANGE_PRECISION)
         median_v = percentile(values, 0.50).round(RANGE_PRECISION)

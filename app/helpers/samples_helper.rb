@@ -6,8 +6,8 @@ module SamplesHelper
     "TiO2"  => { label: "Opacifier / RO2", badge: "bg-[#1E4E79]/10 text-[#1E4E79] border-[#1E4E79]/20" },
     "P2O5"  => { label: "Glass Former", badge: "bg-[#1E4E79]/10 text-[#1E4E79] border-[#1E4E79]/20" },
     "Al2O3" => { label: "Stabilizer", badge: "bg-[#B84A27]/10 text-[#963B1D] border-[#B84A27]/20" },
-    "Fe2O3" => { label: "Colorant / Flux", badge: "bg-red-900/10 text-red-900 border-red-900/20" },
-    "MnO"   => { label: "Colorant", badge: "bg-stone-200/80 text-stone-700 border-stone-300" },
+    "Fe2O3" => { label: "Colorant / R2O3", badge: "bg-red-900/10 text-red-900 border-red-900/20" },
+    "MnO"   => { label: "RO Flux / Color", badge: "bg-amber-700/10 text-amber-900 border-amber-700/25" },
     "CaO"   => { label: "RO Flux", badge: "bg-amber-700/10 text-amber-900 border-amber-700/25" },
     "MgO"   => { label: "RO Flux", badge: "bg-amber-700/10 text-amber-900 border-amber-700/25" },
     "Na2O"  => { label: "R2O Flux", badge: "bg-emerald-800/10 text-emerald-900 border-emerald-800/20" },
@@ -111,8 +111,10 @@ module SamplesHelper
 
     pct = ->(v) { ((v.clamp(0.0, axis_max) / axis_max) * 100.0).round(1) }
 
-    min_pct = pct.call(min_v)
-    max_pct = pct.call(max_v)
+    whisker_min = [ min_v, val ].min
+    whisker_max = [ max_v, val ].max
+    min_pct = pct.call(whisker_min)
+    max_pct = pct.call(whisker_max)
     q1_pct  = pct.call(q1_v)
     q3_pct  = pct.call(q3_v)
     val_pct = pct.call(val)

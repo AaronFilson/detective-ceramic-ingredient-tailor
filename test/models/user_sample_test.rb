@@ -59,7 +59,7 @@ class UserSampleTest < ActiveSupport::TestCase
     assert_equal obs, sample.latest_field_observation
     assert_equal assay, sample.latest_assay_result
 
-    assert_difference ["FieldObservation.count", "AssayResult.count"], -1 do
+    assert_difference [ "FieldObservation.count", "AssayResult.count" ], -1 do
       sample.destroy!
     end
   end

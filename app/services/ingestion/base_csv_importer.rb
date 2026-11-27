@@ -43,52 +43,59 @@ module Ingestion
       csv_body = strip_preamble(csv_content)
       col_sep = detect_separator(csv_body)
 
-      ReferenceAssay.transaction do
-        CSV.parse(csv_body, headers: true, col_sep: col_sep, liberal_parsing: true).each_with_index do |row, idx|
-          row_num = idx + 2
-          normalized_row = normalize_row_headers(row)
+      rows = CSV.parse(csv_body, headers: true, col_sep: col_sep, liberal_parsing: true)
+      rows.each_with_index.each_slice(500) do |batch|
+        ReferenceAssay.transaction do
+          batch.each do |row, idx|
+            row_num = idx + 2
+            normalized_row = normalize_row_headers(row)
 
-          lat = extract_coordinate(normalized_row, LATITUDE_KEYS, -90.0..90.0)
-          lng = extract_coordinate(normalized_row, LONGITUDE_KEYS, -180.0..180.0)
-          if lat.nil? || lng.nil?
-            skipped += 1
-            errors << { row: row_num, reason: "Missing or invalid latitude/longitude" }
-            next
-          end
+            lat = extract_coordinate(normalized_row, LATITUDE_KEYS, -90.0..90.0)
+            lng = extract_coordinate(normalized_row, LONGITUDE_KEYS, -180.0..180.0)
+            if lat.nil? || lng.nil?
+              skipped += 1
+              errors << { row: row_num, reason: "Missing or invalid latitude/longitude" }
+              next
+            end
 
-          raw_oxides = extract_oxides(normalized_row)
-          if raw_oxides["SiO2"].nil? || !raw_oxides["SiO2"].positive? ||
-              raw_oxides["Al2O3"].nil? || !raw_oxides["Al2O3"].positive?
-            skipped += 1
-            errors << { row: row_num, reason: "Missing valid numeric SiO2 or Al2O3" }
-            next
-          end
+            raw_oxides = extract_oxides(normalized_row)
+            if raw_oxides["SiO2"].nil? || !raw_oxides["SiO2"].positive? ||
+                raw_oxides["Al2O3"].nil? || !raw_oxides["Al2O3"].positive?
+              skipped += 1
+              errors << { row: row_num, reason: "Missing valid numeric SiO2 or Al2O3" }
+              next
+            end
 
-          normalized_oxides = CeramicOxides.normalize(raw_oxides)
-          if normalized_oxides.nil?
-            skipped += 1
-            errors << { row: row_num, reason: "Oxide total must be positive" }
-            next
-          end
+            normalized_oxides = CeramicOxides.normalize(raw_oxides)
+            if normalized_oxides.nil?
+              skipped += 1
+              errors << { row: row_num, reason: "Oxide total must be positive" }
+              next
+            end
 
-          rock_type = extract_rock_type(normalized_row)
-          external_id = extract_external_id(normalized_row, lat, lng, rock_type, normalized_oxides)
-          raw_metadata = build_raw_metadata(row)
+            rock_type = extract_rock_type(normalized_row)
+            external_id = extract_external_id(normalized_row, lat, lng, rock_type, normalized_oxides)
+            raw_metadata = build_raw_metadata(row)
 
-          assay = ReferenceAssay.find_or_initialize_by(source: @source, external_id: external_id)
-          was_new = assay.new_record?
-          assay.assign_attributes(
-            rock_type: rock_type,
-            location: Geolocatable.factory.point(lng, lat),
-            oxides: normalized_oxides,
-            raw_metadata: raw_metadata
-          )
-          assay.save!
+            assay = ReferenceAssay.find_or_initialize_by(source: @source, external_id: external_id)
+            was_new = assay.new_record?
+            assay.assign_attributes(
+              rock_type: rock_type,
+              location: Geolocatable.factory.point(lng, lat),
+              oxides: normalized_oxides,
+              raw_metadata: raw_metadata
+            )
 
-          if was_new
-            created += 1
-          else
-            updated += 1
+            if assay.save
+              if was_new
+                created += 1
+              else
+                updated += 1
+              end
+            else
+              skipped += 1
+              errors << { row: row_num, reason: assay.errors.full_messages.to_sentence }
+            end
           end
         end
       end

@@ -69,6 +69,7 @@ module Exporters
 
       # Fired oxides + LOI sum to exact 100.00%
       assert_not payload["oxideAnalysis"].key?("LOI")
+      assert_equal payload["oxideAnalysis"], payload["analysis"]
       assert_in_delta 100.0, payload["oxideAnalysis"].values.sum + payload["loi"], 0.001
       assert_in_delta 100.0, payload["oxides"].values.sum, 0.001
       assert_equal CeramicOxides::KEYS, payload["oxides"].keys
@@ -120,8 +121,8 @@ module Exporters
       assert_equal expected_equivalent, umf["equivalent_weight"]
       assert_equal expected_formulaweight, umf["formula_weight"]
       assert_in_delta((62.4 / 60.08) / (18.2 / 101.96), umf["si_al_ratio"], 0.002)
-      assert_equal %w[CaO MgO Na2O K2O], umf["fluxes"].keys
-      assert_equal %w[Al2O3 Fe2O3 MnO], umf["intermediates"].keys
+      assert_equal %w[CaO MgO MnO Na2O K2O], umf["fluxes"].keys
+      assert_equal %w[Al2O3 Fe2O3], umf["intermediates"].keys
       assert_equal %w[SiO2 TiO2 P2O5], umf["glass_formers"].keys
 
       # Source metadata
@@ -191,17 +192,26 @@ module Exporters
       end
     end
 
-    test "caps extreme LOI below 100.0 while keeping exact 100.00% total" do
+    test "caps extreme LOI at 99.90% for glazecalc MCP compatibility while keeping exact 100.00% total" do
       extreme_assay = @sample.assay_results.create!(
         source_type: :spatial_heuristic_estimate,
         oxides: { "SiO2" => 0.001, "LOI" => 99.999 }
       )
 
       payload = GlazecalcMaterialSerializer.call(extreme_assay)
-      assert payload["loi"] < 100.0
-      assert_equal 99.99, payload["loi"]
-      assert_equal 0.01, payload["oxideAnalysis"]["SiO2"]
+      assert payload["loi"] <= 99.9
+      assert_equal 99.9, payload["loi"]
+      assert_equal 0.1, payload["oxideAnalysis"]["SiO2"]
       assert_equal 100.0, (payload["oxideAnalysis"].values.sum + payload["loi"]).round(2)
+    end
+
+    test "export_envelope wraps material in glazecalc-export v1 import envelope" do
+      envelope = GlazecalcMaterialSerializer.export_envelope(@assay)
+      assert_equal "glazecalc-export", envelope["format"]
+      assert_equal 1, envelope["version"]
+      assert_not_nil envelope["exportedAt"]
+      assert_equal 1, envelope.dig("records", "materials").length
+      assert_equal "Tacoma Bluff Wild Clay", envelope.dig("records", "materials", 0, "name")
     end
 
     test "accepts UserSample directly and selects its latest AssayResult" do

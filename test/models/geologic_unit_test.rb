@@ -19,7 +19,7 @@ class GeologicUnitTest < ActiveSupport::TestCase
 
     polygon_geojson = {
       "type" => "Polygon",
-      "coordinates" => [[[-122.5, 47.2], [-122.4, 47.2], [-122.4, 47.3], [-122.5, 47.3], [-122.5, 47.2]]]
+      "coordinates" => [ [ [ -122.5, 47.2 ], [ -122.4, 47.2 ], [ -122.4, 47.3 ], [ -122.5, 47.3 ], [ -122.5, 47.2 ] ] ]
     }
     poly_unit = GeologicUnit.create!(
       macrostrat_id: 9002,
@@ -33,8 +33,8 @@ class GeologicUnitTest < ActiveSupport::TestCase
     multipolygon_geojson = {
       "type" => "MultiPolygon",
       "coordinates" => [
-        [[[-122.6, 47.1], [-122.5, 47.1], [-122.5, 47.2], [-122.6, 47.2], [-122.6, 47.1]]],
-        [[[-122.3, 47.3], [-122.2, 47.3], [-122.2, 47.4], [-122.3, 47.4], [-122.3, 47.3]]]
+        [ [ [ -122.6, 47.1 ], [ -122.5, 47.1 ], [ -122.5, 47.2 ], [ -122.6, 47.2 ], [ -122.6, 47.1 ] ] ],
+        [ [ [ -122.3, 47.3 ], [ -122.2, 47.3 ], [ -122.2, 47.4 ], [ -122.3, 47.4 ], [ -122.3, 47.3 ] ] ]
       ]
     }
     multi_unit = GeologicUnit.create!(
@@ -63,7 +63,7 @@ class GeologicUnitTest < ActiveSupport::TestCase
         ]
       }
     )
-    assert_equal ["glacial till", "unconsolidated", "clay", "siliciclastic"], unit_b.lithology_terms
+    assert_equal [ "glacial till", "unconsolidated", "clay", "siliciclastic" ], unit_b.lithology_terms
 
     unit_c = GeologicUnit.new(macrostrat_id: 9012, lithology: {})
     assert_equal [], unit_c.lithology_terms

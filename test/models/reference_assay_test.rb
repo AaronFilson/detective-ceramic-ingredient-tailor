@@ -66,7 +66,7 @@ class ReferenceAssayTest < ActiveSupport::TestCase
       .ordered_by_distance(tacoma_lat, tacoma_lng)
       .to_a
 
-    assert_equal [near, mid], within_50km
+    assert_equal [ near, mid ], within_50km
     assert_not_includes within_50km, far
   end
 end

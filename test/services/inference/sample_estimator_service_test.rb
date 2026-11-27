@@ -36,8 +36,8 @@ module Inference
 
       @baseline_ranges = @baseline_oxides.transform_values do |med|
         {
-          "min"    => [med - 2.0, 0.0].max.round(2),
-          "q1"     => [med - 1.0, 0.0].max.round(2),
+          "min"    => [ med - 2.0, 0.0 ].max.round(2),
+          "q1"     => [ med - 1.0, 0.0 ].max.round(2),
           "median" => med,
           "q3"     => (med + 1.2).round(2),
           "max"    => (med + 2.5).round(2),
@@ -50,7 +50,7 @@ module Inference
           oxides: @baseline_oxides,
           oxide_ranges: @baseline_ranges,
           confidence_score: 0.72,
-          reasoning_log: ["Spatial baseline from 18 PNW reference assays within 50 km of Tacoma, WA."]
+          reasoning_log: [ "Spatial baseline from 18 PNW reference assays within 50 km of Tacoma, WA." ]
         )
       end
     end
@@ -75,7 +75,7 @@ module Inference
         source_type: :verified_lab_xrf,
         oxides: @baseline_oxides,
         confidence_score: 0.99,
-        reasoning_log: ["Verified lab XRF upload"]
+        reasoning_log: [ "Verified lab XRF upload" ]
       )
 
       @sample.field_observations.create!(
@@ -92,7 +92,7 @@ module Inference
 
       # Leaves verified lab XRF record untouched
       assert_equal BigDecimal("0.99"), lab_xrf.reload.confidence_score
-      assert_equal ["Verified lab XRF upload"], lab_xrf.reasoning_log
+      assert_equal [ "Verified lab XRF upload" ], lab_xrf.reasoning_log
 
       # Applies field observation modifiers cleanly
       assert_equal 100.0, updated.oxides.values.sum.round(2)
@@ -131,7 +131,7 @@ module Inference
           oxides: @baseline_oxides,
           oxide_ranges: @baseline_ranges,
           confidence_score: 0.96,
-          reasoning_log: ["High confidence local cluster"]
+          reasoning_log: [ "High confidence local cluster" ]
         )
       end
 

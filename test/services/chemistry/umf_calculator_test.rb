@@ -29,13 +29,13 @@ module Chemistry
       ]
       assert_equal expected_keys.sort, umf.keys.sort
 
-      # Hand-computed molar equivalents per 100g:
+      # Hand-computed molar equivalents per 100g (RO includes divalent MnO per Seger / glazecalc):
       # CaO: 1.80 / 56.08 = 0.032097
       # MgO: 1.10 / 40.30 = 0.027295
+      # MnO: 0.05 / 70.94 = 0.000705
       # Na2O: 0.90 / 61.98 = 0.014521
       # K2O: 2.50 / 94.20 = 0.026539
-      # Flux sum = 0.100452
-      expected_flux_moles = (1.80 / 56.08) + (1.10 / 40.30) + (0.90 / 61.98) + (2.50 / 94.20)
+      expected_flux_moles = (1.80 / 56.08) + (1.10 / 40.30) + (0.05 / 70.94) + (0.90 / 61.98) + (2.50 / 94.20)
       expected_eq_weight  = 100.0 / expected_flux_moles
       expected_fw         = expected_eq_weight * (1.0 - 7.85 / 100.0)
       expected_si_al      = (62.40 / 60.08) / (20.10 / 101.96)
@@ -43,7 +43,7 @@ module Chemistry
       assert_in_delta 1.0, umf["flux_total"], 0.0001
       assert_in_delta 1.0, umf["fluxes"].values.sum, 0.0005
       assert_in_delta 1.0, umf["ro_total"] + umf["r2o_total"], 0.0005
-      assert_in_delta ((1.80 / 56.08) + (1.10 / 40.30)) / expected_flux_moles, umf["ro_total"], 0.0002
+      assert_in_delta ((1.80 / 56.08) + (1.10 / 40.30) + (0.05 / 70.94)) / expected_flux_moles, umf["ro_total"], 0.0002
       assert_in_delta ((0.90 / 61.98) + (2.50 / 94.20)) / expected_flux_moles, umf["r2o_total"], 0.0002
 
       assert_in_delta expected_si_al, umf["si_al_ratio"], 0.001
@@ -51,8 +51,8 @@ module Chemistry
       assert_in_delta expected_fw, umf["formula_weight"], 0.02
 
       # Verify groupings and absence of LOI in fired oxides
-      assert_equal %w[CaO MgO Na2O K2O], umf["fluxes"].keys
-      assert_equal %w[Al2O3 Fe2O3 MnO], umf["intermediates"].keys
+      assert_equal %w[CaO MgO MnO Na2O K2O], umf["fluxes"].keys
+      assert_equal %w[Al2O3 Fe2O3], umf["intermediates"].keys
       assert_equal %w[SiO2 TiO2 P2O5], umf["glass_formers"].keys
       assert_not_includes umf["oxides"].keys, "LOI"
 

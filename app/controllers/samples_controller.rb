@@ -80,11 +80,13 @@ class SamplesController < ApplicationController
   def update
     @sample = UserSample.find(params[:id])
     prev_coords = [ @sample.latitude, @sample.longitude ]
+    prev_unit_id = @sample.geologic_unit_id
     @sample.assign_attributes(sample_params)
 
     coords_changed = prev_coords != [ @sample.latitude, @sample.longitude ]
-    explicit_unit = sample_params[:geologic_unit_id].present?
-    assign_geologic_unit_if_needed!(@sample, force: coords_changed && !explicit_unit)
+    submitted_unit_id = sample_params[:geologic_unit_id].presence&.to_i
+    explicit_new_unit = submitted_unit_id.present? && submitted_unit_id != prev_unit_id
+    assign_geologic_unit_if_needed!(@sample, force: coords_changed && !explicit_new_unit)
 
     if @sample.save
       @assay_result = self.class.estimate_sample(@sample, field_observation: @sample.latest_field_observation)
@@ -203,7 +205,11 @@ class SamplesController < ApplicationController
     return if sample.geologic_unit_id.present? && !force
 
     unit = self.class.lookup_geologic_unit(lat: sample.latitude, lng: sample.longitude)
-    sample.geologic_unit = unit if unit.present?
+    if force
+      sample.geologic_unit = unit
+    elsif unit.present?
+      sample.geologic_unit = unit
+    end
   end
 
   def parse_coordinate(value)

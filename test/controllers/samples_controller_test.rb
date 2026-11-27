@@ -213,6 +213,38 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil sample.latest_assay_result
   end
 
+  test "PATCH /samples/:id clears stale geologic_unit_id when coordinates move to unmapped location" do
+    sample = UserSample.create!(
+      title: "Relocated Sample",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443,
+      geologic_unit: @tacoma_unit
+    )
+    SamplesController.estimate_sample(sample)
+
+    stub_request(:get, "https://macrostrat.org/api/v2/geologic_units/map")
+      .with(query: hash_including("lat" => "10.0", "lng" => "-150.0", "format" => "geojson"))
+      .to_return(
+        status: 200,
+        body: { type: "FeatureCollection", features: [] }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    patch sample_path(sample), params: {
+      user_sample: {
+        title: "Relocated Sample",
+        material_category: "wild_clay",
+        latitude: "10.0",
+        longitude: "-150.0",
+        geologic_unit_id: @tacoma_unit.id.to_s
+      }
+    }
+
+    assert_redirected_to sample_path(sample)
+    assert_nil sample.reload.geologic_unit_id
+  end
+
   test "DELETE /samples/:id destroys sample and redirects to root" do
     sample = UserSample.create!(title: "Disposable Sample", material_category: :other)
 

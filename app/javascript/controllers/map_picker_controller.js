@@ -167,6 +167,9 @@ export default class extends Controller {
     if (this.hasCoordsDisplayTarget) {
       this.coordsDisplayTarget.textContent = `${boundedLat.toFixed(4)}, ${boundedLng.toFixed(4)}`
     }
+    if (this.hasGeologicUnitIdInputTarget) {
+      this.geologicUnitIdInputTarget.value = ""
+    }
 
     this.reloadGeologicUnitFrame(boundedLat, boundedLng)
   }

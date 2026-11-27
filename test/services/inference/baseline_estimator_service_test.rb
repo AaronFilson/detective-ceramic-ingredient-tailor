@@ -13,7 +13,7 @@ module Inference
 
     test "Tier 1: uses 15km local match when >= 5 matching assays exist within 15km" do
       # Create 5 glacial_clay assays within ~1-5 km of Tacoma plus 1 basalt nearby and 1 distant clay
-      sio2_values = [56.0, 58.0, 60.0, 62.0, 64.0]
+      sio2_values = [ 56.0, 58.0, 60.0, 62.0, 64.0 ]
       created_ids = sio2_values.each_with_index.map do |sio2, idx|
         create_assay!(
           external_id: "LOCAL-CLAY-#{idx}",
@@ -84,7 +84,7 @@ module Inference
       end
 
       # 3 more matching assays between 20 km and 40 km
-      [47.48, 47.55, 47.05].each_with_index do |lat, idx|
+      [ 47.48, 47.55, 47.05 ].each_with_index do |lat, idx|
         create_assay!(
           external_id: "REGIONAL-CLAY-#{idx}",
           rock_type: "alluvial_clay",
@@ -198,7 +198,7 @@ module Inference
       assert_equal :lithology_global, result.strategy
       assert_nil result.search_radius_meters
       assert_equal 2, result.sample_count
-      assert_equal [kaolin_a.id, kaolin_b.id].sort, result.matched_assay_ids.sort
+      assert_equal [ kaolin_a.id, kaolin_b.id ].sort, result.matched_assay_ids.sort
       assert_operator result.oxides["Al2O3"], :>, 35.0
       assert_in_delta 100.0, result.oxides.values.sum, 0.01
       assert result.reasoning_log.any? { |entry| entry.include?("Tier 4 hit") }
@@ -282,7 +282,7 @@ module Inference
 
     test "linear interpolation computes exact q1, median, q3, and iqr for even-length datasets" do
       # 4 assays with SiO2 = [10, 20, 30, 40] -> q1=17.5, median=25.0, q3=32.5, iqr=15.0
-      [10.0, 20.0, 30.0, 40.0].each_with_index do |sio2, idx|
+      [ 10.0, 20.0, 30.0, 40.0 ].each_with_index do |sio2, idx|
         create_assay!(
           external_id: "INTERP-#{idx}",
           rock_type: "bentonite",

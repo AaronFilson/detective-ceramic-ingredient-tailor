@@ -120,9 +120,9 @@ module Inference
       oxides = Inference::ObservationModifierService.normalize_exact_oxides(medians)
 
       ranges = oxides.transform_values do |med|
-        spread = [med * 0.25, 0.5].max
-        r_min = [med - spread, 0.0].max.round(2)
-        r_max = [med + spread, 100.0].min.round(2)
+        spread = [ med * 0.25, 0.5 ].max
+        r_min = [ med - spread, 0.0 ].max.round(2)
+        r_max = [ med + spread, 100.0 ].min.round(2)
         r_q1  = ((r_min + med) / 2.0).round(2)
         r_q3  = ((med + r_max) / 2.0).round(2)
         {
@@ -139,7 +139,7 @@ module Inference
         oxides: oxides,
         oxide_ranges: ranges,
         confidence_score: 0.25,
-        reasoning_log: ["Applied default #{category.tr('_', ' ')} ceramic chemistry baseline (spatial estimator unavailable)."]
+        reasoning_log: [ "Applied default #{category.tr('_', ' ')} ceramic chemistry baseline (spatial estimator unavailable)." ]
       )
     end
   end

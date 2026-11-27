@@ -8,8 +8,13 @@ class SampleExportsController < ActionController::API
     assay_result = @sample.latest_assay_result
     return render_not_found("No assay result available for sample #{@sample.id}") if assay_result.nil?
 
-    payload = Exporters::GlazecalcMaterialSerializer.call(assay_result)
-    render_export_json(payload, filename: "#{sample_slug}-glazecalc.json", set_inline_filename: false)
+    payload = if params[:envelope].to_s == "export"
+      Exporters::GlazecalcMaterialSerializer.export_envelope(assay_result)
+    else
+      Exporters::GlazecalcMaterialSerializer.call(assay_result)
+    end
+    filename = params[:envelope].to_s == "export" ? "#{sample_slug}-glazecalc-import.json" : "#{sample_slug}-glazecalc.json"
+    render_export_json(payload, filename: filename, set_inline_filename: false)
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
   end

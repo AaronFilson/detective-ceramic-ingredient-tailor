@@ -18,7 +18,7 @@ class AssayResultTest < ActiveSupport::TestCase
       oxide_ranges: { "SiO2" => { "min" => 55.0, "max" => 61.0 } },
       umf_formula: { "fluxes" => { "CaO" => 0.45 }, "alumina" => 0.35, "silica" => 2.8 },
       confidence_score: 0.815,
-      reasoning_log: ["Matched Vashon glacial drift", "Adjusted Fe2O3 for red fired color"]
+      reasoning_log: [ "Matched Vashon glacial drift", "Adjusted Fe2O3 for red fired color" ]
     )
     result.reload
 

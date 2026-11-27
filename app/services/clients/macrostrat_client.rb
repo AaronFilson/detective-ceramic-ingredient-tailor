@@ -24,7 +24,7 @@ module Clients
     DEFAULT_OPEN_TIMEOUT = 5
     DEFAULT_TIMEOUT = 10
     DEFAULT_MAX_RETRIES = 2
-    RETRYABLE_STATUSES = [429, *(500..599)].freeze
+    RETRYABLE_STATUSES = [ 429, *(500..599) ].freeze
     RETRYABLE_EXCEPTIONS = [
       Faraday::TimeoutError,
       Faraday::ConnectionFailed,
@@ -75,10 +75,16 @@ module Clients
       end
 
       payload = fetch_payload(lat_f, lng_f)
-      extracted = extract_unit_data(payload, lat_f, lng_f)
-      return nil unless extracted
+      covering, fallback = extract_unit_candidates(payload, lat_f, lng_f)
 
-      upsert_geologic_unit(extracted)
+      if covering.any?
+        persisted = covering.map { |item| upsert_geologic_unit(item) }
+        return persisted.first
+      end
+
+      return nil unless fallback
+
+      upsert_geologic_unit(fallback)
     end
 
     private
@@ -99,7 +105,7 @@ module Clients
         raise Error, "Invalid coordinates: lat=#{lat.inspect}, lng=#{lng.inspect}"
       end
 
-      [lat_f, lng_f]
+      [ lat_f, lng_f ]
     end
 
     def parse_coordinate(value)
@@ -188,18 +194,26 @@ module Clients
       raise Error, "Invalid JSON from Macrostrat API: #{e.message}"
     end
 
-    def extract_unit_data(payload, lat, lng)
+    def extract_unit_candidates(payload, lat, lng)
       candidates = extract_candidates(payload)
-      return nil if candidates.empty?
+      return [ [], nil ] if candidates.empty?
 
       parsed = candidates.filter_map { |candidate| normalize_candidate(candidate) }
-      return nil if parsed.empty?
+      return [ [], nil ] if parsed.empty?
 
       point = geo_factory.point(lng, lat)
-      covering = parsed.find { |item| item[:boundary] && geometry_covers_point?(item[:boundary], point) }
-      return covering if covering
+      covering = parsed
+        .select { |item| item[:boundary] && geometry_covers_point?(item[:boundary], point) }
+        .sort_by { |item| safe_geometry_area(item[:boundary]) }
 
-      parsed.find { |item| item[:boundary].present? } || parsed.first
+      fallback = parsed.find { |item| item[:boundary].present? } || parsed.first
+      [ covering, fallback ]
+    end
+
+    def safe_geometry_area(boundary)
+      boundary.area
+    rescue RGeo::Error::RGeoError, NoMethodError
+      Float::INFINITY
     end
 
     def extract_candidates(payload)
@@ -208,7 +222,7 @@ module Clients
         if geojson_feature_collection?(payload)
           Array(payload["features"]).select { |f| f.is_a?(Hash) }
         elsif payload["type"] == "Feature"
-          [payload]
+          [ payload ]
         elsif payload.dig("success", "data").is_a?(Hash) && geojson_feature_collection?(payload.dig("success", "data"))
           Array(payload.dig("success", "data", "features")).select { |f| f.is_a?(Hash) }
         elsif payload.dig("success", "data").is_a?(Array)
@@ -274,7 +288,7 @@ module Clients
       direct = present_string(props["age"])
       return direct if direct
 
-      interval = [present_string(props["b_int_name"]), present_string(props["t_int_name"])].compact.uniq
+      interval = [ present_string(props["b_int_name"]), present_string(props["t_int_name"]) ].compact.uniq
       interval.empty? ? nil : interval.join(" - ")
     end
 

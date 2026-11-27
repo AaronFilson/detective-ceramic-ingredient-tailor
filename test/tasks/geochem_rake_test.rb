@@ -13,7 +13,7 @@ class GeochemRakeTest < ActiveSupport::TestCase
     task = Rake::Task["geochem:import_usgs"]
     task.reenable
 
-    Tempfile.create(["usgs_rake", ".csv"]) do |f|
+    Tempfile.create([ "usgs_rake", ".csv" ]) do |f|
       f.write("LAB_ID,LATITUDE,LONGITUDE,ROCK_TYPE,SIO2,AL2O3,FE2O3,LOI\n")
       f.write("RAKE-USGS-1,47.25,-122.44,glacial_clay,60.0,18.0,6.0,6.0\n")
       f.flush
@@ -30,7 +30,7 @@ class GeochemRakeTest < ActiveSupport::TestCase
     task = Rake::Task["geochem:import_earthchem"]
     task.reenable
 
-    Tempfile.create(["earthchem_rake", ".csv"]) do |f|
+    Tempfile.create([ "earthchem_rake", ".csv" ]) do |f|
       f.write("SAMPLE ID,LATITUDE,LONGITUDE,ROCK NAME,SIO2,AL2O3,FEOT,LOI\n")
       f.write("RAKE-EC-1,46.94,-119.98,basalt,51.0,14.0,12.0,1.0\n")
       f.flush

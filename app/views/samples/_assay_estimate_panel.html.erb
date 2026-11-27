@@ -77,7 +77,7 @@
                 <span class="font-mono"><%= format("%.2f", (umf["flux_total"] || 1.0).to_f) %></span>
               </div>
               <dl class="space-y-1 font-mono text-xs tabular-nums">
-                <% %w[CaO MgO Na2O K2O].each do |ox| %>
+                <% %w[CaO MgO MnO Na2O K2O].each do |ox| %>
                   <% val = fluxes[ox].to_f %>
                   <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
                     <dt><%= ox %></dt>
@@ -98,7 +98,7 @@
               R2O3 Intermed.
             </div>
             <dl class="space-y-1 font-mono text-xs tabular-nums">
-              <% %w[Al2O3 Fe2O3 MnO].each do |ox| %>
+              <% %w[Al2O3 Fe2O3].each do |ox| %>
                 <% val = intermediates[ox].to_f %>
                 <div class="flex items-center justify-between <%= val > 0 ? 'text-stone-900' : 'text-stone-400' %>">
                   <dt><%= ox %></dt>
@@ -267,6 +267,11 @@
 
         <%= link_to "Download Glazecalc JSON",
           export_glazecalc_path(sample, download: true),
+          data: { turbo: false },
+          class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
+
+        <%= link_to "Download Glazecalc Import File",
+          "#{export_glazecalc_path(sample, download: true)}&envelope=export",
           data: { turbo: false },
           class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
 

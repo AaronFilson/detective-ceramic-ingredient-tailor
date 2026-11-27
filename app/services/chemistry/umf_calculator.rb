@@ -15,12 +15,12 @@ module Chemistry
       "MnO"   => 70.94
     }.freeze
 
-    RO_OXIDES           = %w[CaO MgO].freeze
+    RO_OXIDES           = %w[CaO MgO MnO].freeze
     R2O_OXIDES          = %w[Na2O K2O].freeze
     FLUX_OXIDES         = (RO_OXIDES + R2O_OXIDES).freeze
-    INTERMEDIATE_OXIDES = %w[Al2O3 Fe2O3 MnO].freeze
+    INTERMEDIATE_OXIDES = %w[Al2O3 Fe2O3].freeze
     GLASS_FORMER_OXIDES = %w[SiO2 TiO2 P2O5].freeze
-    FIRED_OXIDES        = (CeramicOxides::KEYS - ["LOI"]).freeze
+    FIRED_OXIDES        = (CeramicOxides::KEYS - [ "LOI" ]).freeze
 
     def self.call(oxides_hash)
       new(oxides_hash).call

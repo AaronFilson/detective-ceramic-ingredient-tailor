@@ -33,13 +33,13 @@ module Clients
             },
             geometry: {
               type: "Polygon",
-              coordinates: [[
-                [-122.55, 47.20],
-                [-122.35, 47.20],
-                [-122.35, 47.32],
-                [-122.55, 47.32],
-                [-122.55, 47.20]
-              ]]
+              coordinates: [ [
+                [ -122.55, 47.20 ],
+                [ -122.35, 47.20 ],
+                [ -122.35, 47.32 ],
+                [ -122.55, 47.32 ],
+                [ -122.55, 47.20 ]
+              ] ]
             }
           }
         ]
@@ -91,8 +91,8 @@ module Clients
             geometry: {
               type: "MultiPolygon",
               coordinates: [
-                [[[-121.90, 46.75], [-121.65, 46.75], [-121.65, 46.95], [-121.90, 46.95], [-121.90, 46.75]]],
-                [[[-121.50, 47.00], [-121.30, 47.00], [-121.30, 47.15], [-121.50, 47.15], [-121.50, 47.00]]]
+                [ [ [ -121.90, 46.75 ], [ -121.65, 46.75 ], [ -121.65, 46.95 ], [ -121.90, 46.95 ], [ -121.90, 46.75 ] ] ],
+                [ [ [ -121.50, 47.00 ], [ -121.30, 47.00 ], [ -121.30, 47.15 ], [ -121.50, 47.15 ], [ -121.50, 47.00 ] ] ]
               ]
             }
           }
@@ -127,13 +127,13 @@ module Clients
       polygon = RGeo::GeoJSON.decode(
         {
           "type" => "Polygon",
-          "coordinates" => [[
-            [-122.55, 47.20],
-            [-122.35, 47.20],
-            [-122.35, 47.32],
-            [-122.55, 47.32],
-            [-122.55, 47.20]
-          ]]
+          "coordinates" => [ [
+            [ -122.55, 47.20 ],
+            [ -122.35, 47.20 ],
+            [ -122.35, 47.32 ],
+            [ -122.55, 47.32 ],
+            [ -122.55, 47.20 ]
+          ] ]
         },
         geo_factory: factory
       )
@@ -160,13 +160,13 @@ module Clients
       polygon = RGeo::GeoJSON.decode(
         {
           "type" => "Polygon",
-          "coordinates" => [[
-            [-122.55, 47.20],
-            [-122.35, 47.20],
-            [-122.35, 47.32],
-            [-122.55, 47.32],
-            [-122.55, 47.20]
-          ]]
+          "coordinates" => [ [
+            [ -122.55, 47.20 ],
+            [ -122.35, 47.20 ],
+            [ -122.35, 47.32 ],
+            [ -122.55, 47.32 ],
+            [ -122.55, 47.20 ]
+          ] ]
         },
         geo_factory: factory
       )
@@ -193,13 +193,13 @@ module Clients
             },
             geometry: {
               type: "Polygon",
-              coordinates: [[
-                [-122.55, 47.20],
-                [-122.35, 47.20],
-                [-122.35, 47.32],
-                [-122.55, 47.32],
-                [-122.55, 47.20]
-              ]]
+              coordinates: [ [
+                [ -122.55, 47.20 ],
+                [ -122.35, 47.20 ],
+                [ -122.35, 47.32 ],
+                [ -122.55, 47.32 ],
+                [ -122.55, 47.20 ]
+              ] ]
             }
           }
         ]
@@ -288,7 +288,7 @@ module Clients
       success_body = {
         success: {
           v: 2,
-          data: [{ map_id: 41031, name: "Timeout Recovery Unit", lith: "granite" }]
+          data: [ { map_id: 41031, name: "Timeout Recovery Unit", lith: "granite" } ]
         }
       }.to_json
 
@@ -330,7 +330,7 @@ module Clients
       body = {
         success: {
           v: 2,
-          data: [{ map_id: 41040, name: "String Coord Unit", lith: "alluvial clay" }]
+          data: [ { map_id: 41040, name: "String Coord Unit", lith: "alluvial clay" } ]
         }
       }.to_json
 
@@ -358,6 +358,60 @@ module Clients
       assert_raises(Clients::MacrostratClient::Error) do
         Clients::MacrostratClient.lookup!(lat: 45.0, lng: -120.0)
       end
+    end
+
+    test "prefers smallest-area local covering polygon over coarse continental polygon and parses parenthetical lithology cleanly" do
+      geojson_body = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              map_id: 99001,
+              name: "Regional Quaternary Surficial Deposits",
+              lith: "continental glacial (sand, gravel) till, fraser-age",
+              descrip: "Widespread continental drift overlying granitic and basaltic bedrock"
+            },
+            geometry: {
+              type: "Polygon",
+              coordinates: [ [
+                [ -125.0, 45.0 ], [ -117.0, 45.0 ], [ -117.0, 49.0 ], [ -125.0, 49.0 ], [ -125.0, 45.0 ]
+              ] ]
+            }
+          },
+          {
+            type: "Feature",
+            properties: {
+              map_id: 99002,
+              name: "Lawton Clay Member",
+              strat_name: "Vashon Stade",
+              age: "Late Pleistocene",
+              lith: "glaciolacustrine (clay, silt) deposit",
+              descrip: "Laminated blue-gray clay over basal granite cobbles"
+            },
+            geometry: {
+              type: "Polygon",
+              coordinates: [ [
+                [ -122.50, 47.22 ], [ -122.40, 47.22 ], [ -122.40, 47.28 ], [ -122.50, 47.28 ], [ -122.50, 47.22 ]
+              ] ]
+            }
+          }
+        ]
+      }.to_json
+
+      stub_request(:get, MACROSTRAT_URL_PATTERN)
+        .to_return(status: 200, body: geojson_body, headers: { "Content-Type" => "application/json" })
+
+      unit = Clients::MacrostratClient.lookup(lat: TACOMA_LAT, lng: TACOMA_LNG)
+
+      assert_equal 99002, unit.macrostrat_id
+      assert_equal "Lawton Clay Member", unit.name
+      assert_equal [ "glaciolacustrine deposit", "clay", "silt" ], unit.lithology_terms
+      assert_not_includes unit.lithology_terms, "granite"
+
+      regional = GeologicUnit.find_by!(macrostrat_id: 99001)
+      assert_equal [ "continental glacial till", "fraser-age", "sand", "gravel" ], regional.lithology_terms
+      assert_not_includes regional.lithology_terms.join(" "), "("
     end
   end
 end
