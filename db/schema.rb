@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000014) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -29,6 +29,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
     t.string "lab_report_ref"
     t.boolean "promoted_to_reference", default: false, null: false
     t.bigint "reference_assay_id"
+    t.jsonb "minor_oxides", default: {}, null: false
+    t.jsonb "trace_elements_ppm", default: {}, null: false
+    t.string "analysis_method"
     t.index ["reference_assay_id"], name: "index_assay_results_on_reference_assay_id"
     t.index ["user_sample_id"], name: "index_assay_results_on_user_sample_id"
   end
@@ -65,6 +68,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
     t.index ["macrostrat_id"], name: "index_geologic_units_on_macrostrat_id", unique: true
   end
 
+  create_table "mineral_occurrences", force: :cascade do |t|
+    t.string "source", null: false
+    t.string "external_id"
+    t.string "name", null: false
+    t.jsonb "commodities", default: [], null: false
+    t.jsonb "minerals", default: [], null: false
+    t.string "deposit_type"
+    t.geography "location", limit: {:srid=>4326, :type=>"st_point", :geographic=>true}
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["location"], name: "index_mineral_occurrences_on_location", using: :gist
+    t.index ["source", "external_id"], name: "index_mineral_occurrences_on_source_and_external_id", unique: true
+    t.index ["source"], name: "index_mineral_occurrences_on_source"
+  end
+
   create_table "reference_assays", force: :cascade do |t|
     t.string "source", null: false
     t.string "external_id"
@@ -74,9 +93,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
     t.jsonb "raw_metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "minor_oxides", default: {}, null: false
+    t.jsonb "trace_elements_ppm", default: {}, null: false
+    t.jsonb "xrd_mineralogy", default: {}, null: false
+    t.string "sample_media"
     t.index ["external_id"], name: "index_reference_assays_on_external_id"
     t.index ["location"], name: "index_reference_assays_on_location", using: :gist
     t.index ["rock_type"], name: "index_reference_assays_on_rock_type"
+    t.index ["sample_media"], name: "index_reference_assays_on_sample_media"
     t.index ["source", "external_id"], name: "index_reference_assays_on_source_and_external_id", unique: true
   end
 
@@ -93,8 +117,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000011) do
     t.datetime "fetched_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "source", default: "usda_ssurgo", null: false
+    t.decimal "soil_ph", precision: 4, scale: 2
+    t.decimal "cec", precision: 6, scale: 2
+    t.decimal "organic_carbon", precision: 6, scale: 2
     t.index ["location"], name: "index_soil_profiles_on_location", using: :gist
     t.index ["mukey"], name: "index_soil_profiles_on_mukey", unique: true
+    t.index ["source"], name: "index_soil_profiles_on_source"
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|

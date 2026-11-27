@@ -12,6 +12,7 @@ Rails.application.routes.draw do
   draw(:exports)
   draw(:lab_assays)
   draw(:blends)
+  draw(:mineral_occurrences)
 
   # Defines the root path route ("/")
   draw(:studio)
