@@ -1,0 +1,101 @@
+<div class="space-y-3" data-lab-comparison-table>
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h4 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+      Heuristic vs. Verified Lab Residual Calibration
+    </h4>
+    <span class="text-[11px] text-stone-500">
+      Δ = Verified Lab − Spatial Heuristic
+    </span>
+  </div>
+
+  <%# Summary Accuracy Strip %>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+    <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">MAE</div>
+      <div class="mt-0.5 font-mono text-base font-bold tabular-nums text-stone-900">
+        <%= format("%.2f", comparison[:mae]) %><span class="text-[11px] font-normal text-stone-500 ml-0.5">wt%</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">RMSE</div>
+      <div class="mt-0.5 font-mono text-base font-bold tabular-nums text-stone-900">
+        <%= format("%.2f", comparison[:rmse]) %><span class="text-[11px] font-normal text-stone-500 ml-0.5">wt%</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">In Predicted Range</div>
+      <div class="mt-0.5 font-mono text-base font-bold tabular-nums text-[#1E4E79]">
+        <% if comparison[:in_range_total].positive? %>
+          <%= comparison[:in_range_count] %> / <%= comparison[:in_range_total] %>
+        <% else %>
+          —
+        <% end %>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">SiO2 : Al2O3</div>
+      <div class="mt-0.5 font-mono text-sm font-bold tabular-nums text-stone-900">
+        <%= comparison[:si_al_heuristic] ? format("%.2f", comparison[:si_al_heuristic]) : "—" %>
+        <span class="text-stone-400 font-normal mx-0.5">→</span>
+        <span class="text-[#B84A27]"><%= comparison[:si_al_lab] ? format("%.2f", comparison[:si_al_lab]) : "—" %></span>
+      </div>
+    </div>
+  </div>
+
+  <%# Per-Oxide Residual Comparison Table %>
+  <div class="overflow-x-auto rounded-xl border border-[#D6C7B2] bg-white">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="bg-[#FAF7F2] border-b border-[#E8DFD0] text-[10px] uppercase tracking-wider text-stone-500">
+          <th class="py-2 pl-3 pr-2 font-semibold">Oxide</th>
+          <th class="py-2 px-2 font-semibold text-right">Heuristic Wt %</th>
+          <th class="py-2 px-2 font-semibold text-right">Lab Wt %</th>
+          <th class="py-2 px-2 font-semibold text-right">Δ</th>
+          <th class="py-2 pl-2 pr-3 font-semibold text-right">Range Check</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100 text-xs">
+        <% comparison[:per_oxide].each do |row| %>
+          <% delta_class = if row[:abs_error] <= 1.0
+            "text-emerald-800"
+          elsif row[:abs_error] <= 3.0
+            "text-amber-800"
+          else
+            "text-[#963B1D]"
+          end %>
+          <tr class="hover:bg-[#FAF7F2]/80 transition-colors" data-comparison-oxide="<%= row[:oxide] %>">
+            <td class="py-1.5 pl-3 pr-2 font-mono font-bold text-stone-900"><%= row[:oxide] %></td>
+            <td class="py-1.5 px-2 font-mono text-right tabular-nums text-stone-600">
+              <%= format("%.2f%%", row[:heuristic]) %>
+            </td>
+            <td class="py-1.5 px-2 font-mono font-semibold text-right tabular-nums text-stone-900">
+              <%= format("%.2f%%", row[:lab]) %>
+            </td>
+            <td class="py-1.5 px-2 font-mono font-semibold text-right tabular-nums <%= delta_class %>">
+              <%= format("%+.2f%%", row[:delta]) %>
+            </td>
+            <td class="py-1.5 pl-2 pr-3 text-right">
+              <% if row[:within_range] == true %>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  In Range
+                </span>
+              <% elsif row[:within_range] == false %>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-[#963B1D] border border-orange-200">
+                  Outside
+                  <% if row[:min].present? && row[:max].present? %>
+                    (<%= format("%.1f–%.1f", row[:min], row[:max]) %>)
+                  <% end %>
+                </span>
+              <% else %>
+                <span class="font-mono text-[11px] text-stone-400">—</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

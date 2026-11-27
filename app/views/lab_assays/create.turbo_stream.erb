@@ -1,0 +1,11 @@
+<%= turbo_stream.replace "assay_estimate_panel" do %>
+  <%= render "samples/assay_estimate_panel", sample: @sample, assay_result: @assay_result %>
+<% end %>
+
+<%= turbo_stream.replace "lab_calibration_panel" do %>
+  <%= render "lab_assays/panel",
+    sample: @sample,
+    heuristic_assay: @heuristic_assay,
+    verified_lab_assay: @verified_lab_assay,
+    lab_errors: @lab_errors %>
+<% end %>
