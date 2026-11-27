@@ -13,6 +13,11 @@
         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border <%= source_badge[:classes] %>">
           <%= source_badge[:label] %>
         </span>
+        <% if assay_result.verified_lab? && assay_result.lab_name.present? %>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-900 border border-emerald-200">
+            <%= assay_result.lab_name %>
+          </span>
+        <% end %>
         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border <%= confidence[:badge] %>">
           <span class="w-2 h-2 rounded-full <%= confidence[:dot] %>"></span>
           <span><%= confidence[:pct] %>% Confidence</span>
@@ -127,6 +132,12 @@
       </div>
     </div>
 
+    <%# Interactive Inline SVG Stull Chart (Al2O3 vs SiO2 UMF) %>
+    <%= render "samples/stull_chart",
+      assay_result: assay_result,
+      heuristic_assay: sample.latest_heuristic_assay_result,
+      verified_lab_assay: sample.latest_verified_lab_assay %>
+
     <%# Oxide Breakdown Table %>
     <div class="space-y-2">
       <div class="flex items-center justify-between">
@@ -232,6 +243,14 @@
       <% end %>
     </div>
 
+    <%# Verified Lab XRF / ICP-MS Calibration Loop (Interop Partial) %>
+    <% if lookup_context.exists?("lab_assays/panel", [], true) %>
+      <%= render "lab_assays/panel",
+        sample: sample,
+        heuristic_assay: sample.latest_heuristic_assay_result,
+        verified_lab_assay: sample.latest_verified_lab_assay %>
+    <% end %>
+
     <%# Export & Interop Actions (Glazecalc + Glaze-Vault + API) %>
     <div
       class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3"
@@ -302,6 +321,13 @@
           Copy API URL
         </button>
       </div>
+
+      <%# Direct Glazecalc Push Form (Interop Partial) %>
+      <% if lookup_context.exists?("glazecalc_pushes/form", [], true) %>
+        <div class="pt-3 border-t border-[#E8DFD0]">
+          <%= render "glazecalc_pushes/form", sample: sample %>
+        </div>
+      <% end %>
     </div>
   <% else %>
     <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-6 text-center space-y-2">

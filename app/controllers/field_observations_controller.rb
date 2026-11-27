@@ -74,7 +74,11 @@ class FieldObservationsController < ApplicationController
       :fired_cone,
       :fired_color,
       :melt_state,
-      :shrinkage_percent
+      :shrinkage_percent,
+      :water_of_plasticity,
+      :drying_shrinkage_percent,
+      :firing_shrinkage_percent,
+      :boiling_water_absorption_percent
     )
     # Normalize blank optional enum strings to nil so Rails enum validation accepts optional blank choices
     %i[slaking_behavior plasticity melt_state].each do |enum_attr|

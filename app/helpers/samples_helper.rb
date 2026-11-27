@@ -179,6 +179,96 @@ module SamplesHelper
     format("%.3f", val.to_f)
   end
 
+  # Practical ceramic studio body-fit & firing guidance matching Glaze Vault's body checks
+  # (e.g., maxDryingShrinkage = 7.5% and boiling-water absorption vitrification tiers).
+  def body_fit_assessment(field_observation)
+    return [] if field_observation.nil?
+
+    badges = []
+
+    if field_observation.boiling_water_absorption_percent.present?
+      absorption = field_observation.boiling_water_absorption_percent.to_f
+      badges << if absorption <= 0.5
+        {
+          key: :absorption,
+          label: "Porcelain / Vitreous",
+          detail: "Boiling absorption #{format('%.1f%%', absorption)} (<= 0.5%)",
+          severity: :good,
+          classes: "bg-emerald-100 text-emerald-900 border-emerald-300"
+        }
+      elsif absorption <= 3.0
+        {
+          key: :absorption,
+          label: "Vitreous Stoneware (Functional)",
+          detail: "Boiling absorption #{format('%.1f%%', absorption)} (0.5–3.0%)",
+          severity: :good,
+          classes: "bg-teal-100 text-teal-900 border-teal-300"
+        }
+      elsif absorption <= 6.0
+        {
+          key: :absorption,
+          label: "Semi-Vitreous",
+          detail: "Boiling absorption #{format('%.1f%%', absorption)} (3.0–6.0%)",
+          severity: :caution,
+          classes: "bg-amber-100 text-amber-950 border-amber-300"
+        }
+      else
+        {
+          key: :absorption,
+          label: "Porous Earthenware / Weeping Risk",
+          detail: "Boiling absorption #{format('%.1f%%', absorption)} (> 6.0%)",
+          severity: :warning,
+          classes: "bg-red-100 text-red-900 border-red-300"
+        }
+      end
+    end
+
+    if field_observation.drying_shrinkage_percent.present?
+      dry_shrink = field_observation.drying_shrinkage_percent.to_f
+      if dry_shrink > 7.5
+        badges << {
+          key: :drying_shrinkage,
+          label: "High Drying Crack/Warp Risk",
+          detail: "Drying shrinkage #{format('%.1f%%', dry_shrink)} (> 7.5% Glaze Vault limit)",
+          severity: :warning,
+          classes: "bg-red-100 text-red-900 border-red-300"
+        }
+      else
+        badges << {
+          key: :drying_shrinkage,
+          label: "Safe Drying Shrinkage",
+          detail: "Drying shrinkage #{format('%.1f%%', dry_shrink)} (<= 7.5%)",
+          severity: :good,
+          classes: "bg-stone-100 text-stone-700 border-stone-300"
+        }
+      end
+    end
+
+    total_shrink = field_observation.effective_total_shrinkage
+    if total_shrink.present? && total_shrink > 15.0
+      badges << {
+        key: :total_shrinkage,
+        label: "High Total Shrinkage",
+        detail: "Effective total shrinkage #{format('%.1f%%', total_shrink)} (> 15.0%)",
+        severity: :caution,
+        classes: "bg-amber-100 text-amber-950 border-amber-300"
+      }
+    end
+
+    if field_observation.water_of_plasticity.present? && field_observation.water_of_plasticity.to_f > 35.0
+      wop = field_observation.water_of_plasticity.to_f
+      badges << {
+        key: :water_of_plasticity,
+        label: "High Water Demand",
+        detail: "Water of plasticity #{format('%.1f%%', wop)} (> 35.0%)",
+        severity: :caution,
+        classes: "bg-amber-100 text-amber-950 border-amber-300"
+      }
+    end
+
+    badges
+  end
+
   # Plain path strings so views render cleanly before Agent 5's export routes merge.
   def export_glazecalc_path(sample, download: false)
     base = "/samples/#{sample.id}/export/glazecalc.json"

@@ -58,7 +58,7 @@ class SamplesController < ApplicationController
 
   def show
     @saved_samples = recent_samples
-    @sample = UserSample.includes(:geologic_unit, :field_observations, :assay_results).find(params[:id])
+    @sample = UserSample.includes(:geologic_unit, :soil_profile, :field_observations, :assay_results).find(params[:id])
     load_workbench_context
     render :index
   end
@@ -66,8 +66,10 @@ class SamplesController < ApplicationController
   def create
     @sample = UserSample.new(sample_params)
     assign_geologic_unit_if_needed!(@sample)
+    assign_cached_soil_profile_if_needed!(@sample)
 
     if @sample.save
+      enqueue_soil_profile_lookup_if_needed(@sample)
       self.class.estimate_sample(@sample)
       redirect_to sample_path(@sample), notice: "Sample \"#{@sample.title}\" saved and baseline assay calculated."
     else
@@ -87,8 +89,10 @@ class SamplesController < ApplicationController
     submitted_unit_id = sample_params[:geologic_unit_id].presence&.to_i
     explicit_new_unit = submitted_unit_id.present? && submitted_unit_id != prev_unit_id
     assign_geologic_unit_if_needed!(@sample, force: coords_changed && !explicit_new_unit)
+    assign_cached_soil_profile_if_needed!(@sample, force: coords_changed)
 
     if @sample.save
+      enqueue_soil_profile_lookup_if_needed(@sample)
       @assay_result = self.class.estimate_sample(@sample, field_observation: @sample.latest_field_observation)
       redirect_to sample_path(@sample), notice: "Sample updated and chemical assay recalculated."
     else
@@ -113,9 +117,11 @@ class SamplesController < ApplicationController
 
     if @lookup_performed
       @geologic_unit = self.class.lookup_geologic_unit(lat: @lat, lng: @lng)
+      @soil_profile = self.class.lookup_soil_profile(lat: @lat, lng: @lng)
       @nearby_assay_count = ReferenceAssay.within_radius(@lat, @lng, 50_000).count
     else
       @geologic_unit = nil
+      @soil_profile = nil
       @nearby_assay_count = 0
     end
 
@@ -131,6 +137,19 @@ class SamplesController < ApplicationController
     nil
   end
 
+  def self.lookup_soil_profile(lat:, lng:)
+    return nil if lat.nil? || lng.nil?
+
+    if defined?(Clients::UsdaSsurgoClient)
+      Clients::UsdaSsurgoClient.lookup(lat: lat.to_f, lng: lng.to_f)
+    else
+      SoilProfile.within_radius(lat.to_f, lng.to_f, 250).ordered_by_distance(lat.to_f, lng.to_f).first
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[SamplesController] Soil profile lookup failed (#{e.class}): #{e.message}")
+    nil
+  end
+
   def self.estimate_sample(sample, field_observation: nil)
     Inference::SampleEstimatorService.call(sample, field_observation: field_observation)
   end
@@ -138,7 +157,7 @@ class SamplesController < ApplicationController
   private
 
   def recent_samples
-    UserSample.includes(:geologic_unit, :assay_results).order(updated_at: :desc, id: :desc).limit(30)
+    UserSample.includes(:geologic_unit, :soil_profile, :assay_results).order(updated_at: :desc, id: :desc).limit(30)
   end
 
   def build_default_sample(lat: DEFAULT_LAT, lng: DEFAULT_LNG)
@@ -154,7 +173,10 @@ class SamplesController < ApplicationController
     @map_lng = @sample.longitude || DEFAULT_LNG
     @map_zoom = @sample.persisted? ? 10 : DEFAULT_ZOOM
     @geologic_unit = @sample.geologic_unit
+    @soil_profile = @sample.soil_profile
     @assay_result = @sample.persisted? ? @sample.latest_assay_result : nil
+    @heuristic_assay = @sample.persisted? ? @sample.latest_heuristic_assay_result : nil
+    @verified_lab_assay = @sample.persisted? ? @sample.latest_verified_lab_assay : nil
     @field_observation = if @sample.persisted?
       latest = @sample.latest_field_observation
       @sample.field_observations.build(
@@ -165,7 +187,11 @@ class SamplesController < ApplicationController
         fired_cone: latest&.fired_cone,
         fired_color: latest&.fired_color,
         melt_state: latest&.melt_state,
-        shrinkage_percent: latest&.shrinkage_percent
+        shrinkage_percent: latest&.shrinkage_percent,
+        water_of_plasticity: latest&.water_of_plasticity,
+        drying_shrinkage_percent: latest&.drying_shrinkage_percent,
+        firing_shrinkage_percent: latest&.firing_shrinkage_percent,
+        boiling_water_absorption_percent: latest&.boiling_water_absorption_percent
       )
     else
       FieldObservation.new
@@ -210,6 +236,29 @@ class SamplesController < ApplicationController
     elsif unit.present?
       sample.geologic_unit = unit
     end
+  end
+
+  def assign_cached_soil_profile_if_needed!(sample, force: false)
+    sample.soil_profile = nil if force
+    return if sample.latitude.nil? || sample.longitude.nil?
+    return if sample.soil_profile_id.present?
+
+    cached = SoilProfile.within_radius(sample.latitude, sample.longitude, 250)
+      .ordered_by_distance(sample.latitude, sample.longitude)
+      .first
+    sample.soil_profile = cached if cached.present?
+  rescue StandardError => e
+    Rails.logger.warn("[SamplesController] Cached soil profile lookup failed (#{e.class}): #{e.message}")
+  end
+
+  def enqueue_soil_profile_lookup_if_needed(sample)
+    return unless defined?(SoilProfileLookupJob)
+    return unless sample.soil_profile_id.nil?
+    return if sample.latitude.nil? || sample.longitude.nil?
+
+    SoilProfileLookupJob.perform_later(sample.id)
+  rescue StandardError => e
+    Rails.logger.warn("[SamplesController] Soil profile lookup job enqueue failed (#{e.class}): #{e.message}")
   end
 
   def parse_coordinate(value)

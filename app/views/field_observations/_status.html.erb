@@ -1,23 +1,47 @@
 <div id="field_observation_status">
   <% if field_observation&.persisted? %>
-    <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="inline-block w-2 h-2 rounded-full bg-emerald-600"></span>
-        <span class="font-semibold">Latest observation active:</span>
-        <span>Vinegar fizz <strong><%= field_observation.vinegar_fizz %></strong></span>
-        <% if field_observation.plasticity.present? %>
-          <span>· Plasticity <strong><%= field_observation.plasticity.humanize.downcase %></strong></span>
-        <% end %>
-        <% if field_observation.fired_cone.present? %>
-          <span>· Cone <strong><%= field_observation.fired_cone %></strong></span>
-        <% end %>
-        <% if field_observation.melt_state.present? %>
-          <span>(<strong><%= field_observation.melt_state.humanize.downcase %></strong>)</span>
-        <% end %>
+    <% fit_badges = body_fit_assessment(field_observation) %>
+    <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-950 space-y-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-600"></span>
+          <span class="font-semibold">Latest observation active:</span>
+          <span>Vinegar fizz <strong><%= field_observation.vinegar_fizz %></strong></span>
+          <% if field_observation.plasticity.present? %>
+            <span>· Plasticity <strong><%= field_observation.plasticity.humanize.downcase %></strong></span>
+          <% end %>
+          <% if field_observation.fired_cone.present? %>
+            <span>· Cone <strong><%= field_observation.fired_cone %></strong></span>
+          <% end %>
+          <% if field_observation.melt_state.present? %>
+            <span>(<strong><%= field_observation.melt_state.humanize.downcase %></strong>)</span>
+          <% end %>
+          <% if field_observation.boiling_water_absorption_percent.present? %>
+            <span>· Abs <strong class="font-mono"><%= format("%.1f%%", field_observation.boiling_water_absorption_percent.to_f) %></strong></span>
+          <% end %>
+          <% if field_observation.drying_shrinkage_percent.present? %>
+            <span>· Dry <strong class="font-mono"><%= format("%.1f%%", field_observation.drying_shrinkage_percent.to_f) %></strong></span>
+          <% end %>
+        </div>
+        <span class="font-mono text-[11px] text-emerald-800">
+          Logged <%= field_observation.created_at.strftime("%H:%M:%S") %>
+        </span>
       </div>
-      <span class="font-mono text-[11px] text-emerald-800">
-        Logged <%= field_observation.created_at.strftime("%H:%M:%S") %>
-      </span>
+
+      <% if fit_badges.any? %>
+        <div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-emerald-200/80" data-body-fit-badges>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-900/80 mr-1">Body Fit:</span>
+          <% fit_badges.each do |badge| %>
+            <span
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border <%= badge[:classes] %>"
+              title="<%= badge[:detail] %>"
+              data-body-fit-key="<%= badge[:key] %>"
+            >
+              <%= badge[:label] %>
+            </span>
+          <% end %>
+        </div>
+      <% end %>
     </div>
   <% end %>
 </div>
