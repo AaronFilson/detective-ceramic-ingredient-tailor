@@ -213,7 +213,35 @@ module Clients
     def safe_geometry_area(boundary)
       boundary.area
     rescue RGeo::Error::RGeoError, NoMethodError
-      Float::INFINITY
+      fallback_geometry_area(boundary)
+    end
+
+    def fallback_geometry_area(geometry)
+      case geometry
+      when RGeo::Feature::Polygon
+        polygon_planar_area(geometry)
+      when RGeo::Feature::MultiPolygon
+        geometry.sum { |poly| polygon_planar_area(poly) }
+      else
+        Float::INFINITY
+      end
+    end
+
+    def polygon_planar_area(polygon)
+      outer = ring_planar_area(polygon.exterior_ring)
+      holes = polygon.interior_rings.sum { |ring| ring_planar_area(ring) }
+      (outer - holes).abs
+    end
+
+    def ring_planar_area(ring)
+      pts = ring.points
+      return 0.0 if pts.length < 3
+
+      sum = 0.0
+      (0...(pts.length - 1)).each do |i|
+        sum += (pts[i].x * pts[i + 1].y) - (pts[i + 1].x * pts[i].y)
+      end
+      sum.abs / 2.0
     end
 
     def extract_candidates(payload)
@@ -336,7 +364,43 @@ module Clients
     def geometry_covers_point?(boundary, point)
       boundary.contains?(point) || boundary.intersects?(point)
     rescue RGeo::Error::RGeoError
-      false
+      fallback_geometry_covers_point?(boundary, point)
+    end
+
+    def fallback_geometry_covers_point?(geometry, point)
+      case geometry
+      when RGeo::Feature::Polygon
+        polygon_covers_point?(geometry, point)
+      when RGeo::Feature::MultiPolygon
+        geometry.any? { |poly| polygon_covers_point?(poly, point) }
+      else
+        false
+      end
+    end
+
+    def polygon_covers_point?(polygon, point)
+      return false unless ring_contains_point?(polygon.exterior_ring, point.x, point.y)
+
+      polygon.interior_rings.none? { |hole| ring_contains_point?(hole, point.x, point.y) }
+    end
+
+    def ring_contains_point?(ring, x, y)
+      pts = ring.points
+      return false if pts.length < 3
+
+      inside = false
+      (0...(pts.length - 1)).each do |i|
+        x1 = pts[i].x
+        y1 = pts[i].y
+        x2 = pts[i + 1].x
+        y2 = pts[i + 1].y
+
+        if (y1 > y) != (y2 > y)
+          x_intersect = ((x2 - x1) * (y - y1) / (y2 - y1)) + x1
+          inside = !inside if x <= x_intersect
+        end
+      end
+      inside
     end
 
     def upsert_geologic_unit(data)
