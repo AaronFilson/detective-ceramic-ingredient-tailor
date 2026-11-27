@@ -1,0 +1,29 @@
+<div id="glazecalc_push_result" role="status" aria-live="polite">
+  <% if local_assigns[:push_result].present? %>
+    <% if push_result.success? %>
+      <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-950 space-y-1">
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-semibold text-emerald-900">Pushed to Glazecalc</span>
+          <% if push_result.status.present? %>
+            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+              HTTP <%= push_result.status %>
+            </span>
+          <% end %>
+        </div>
+        <p class="text-emerald-900 leading-snug"><%= push_result.message %></p>
+      </div>
+    <% else %>
+      <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-950 space-y-1">
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-semibold text-red-900">Glazecalc Push Failed</span>
+          <% if push_result.status.present? %>
+            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+              HTTP <%= push_result.status %>
+            </span>
+          <% end %>
+        </div>
+        <p class="text-red-900 leading-snug"><%= push_result.message %></p>
+      </div>
+    <% end %>
+  <% end %>
+</div>

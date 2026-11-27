@@ -86,13 +86,30 @@ module Exporters
 
     def build_sheet(observations)
       sheet = {}
+      reversed = observations.reverse
 
-      cone_obs = observations.reverse.find { |obs| obs.fired_cone.present? }
-      sheet["cone"] = cone_obs.fired_cone.to_s.strip if cone_obs
+      if (cone_obs = reversed.find { |obs| obs.fired_cone.present? })
+        sheet["cone"] = cone_obs.fired_cone.to_s.strip
+      end
 
-      shrinkage_obs = observations.reverse.find { |obs| obs.shrinkage_percent.present? }
-      if shrinkage_obs
-        sheet["totalShrinkage"] = format_number_string(shrinkage_obs.shrinkage_percent)
+      if (drying_obs = reversed.find { |obs| obs.drying_shrinkage_percent.present? })
+        sheet["dryingShrinkage"] = format_number_string(drying_obs.drying_shrinkage_percent)
+      end
+
+      if (firing_obs = reversed.find { |obs| obs.firing_shrinkage_percent.present? })
+        sheet["firingShrinkage"] = format_number_string(firing_obs.firing_shrinkage_percent)
+      end
+
+      if (total_obs = reversed.find { |obs| obs.effective_total_shrinkage.present? })
+        sheet["totalShrinkage"] = format_number_string(total_obs.effective_total_shrinkage)
+      end
+
+      if (absorption_obs = reversed.find { |obs| obs.boiling_water_absorption_percent.present? })
+        sheet["absorption"] = format_number_string(absorption_obs.boiling_water_absorption_percent)
+      end
+
+      if (wop_obs = reversed.find { |obs| obs.water_of_plasticity.present? })
+        sheet["waterOfPlasticity"] = format_number_string(wop_obs.water_of_plasticity)
       end
 
       sheet
@@ -267,6 +284,10 @@ module Exporters
         "fired_color" => obs.fired_color,
         "melt_state" => obs.melt_state,
         "shrinkage_percent" => obs.shrinkage_percent&.to_f,
+        "water_of_plasticity" => obs.water_of_plasticity&.to_f,
+        "drying_shrinkage_percent" => obs.drying_shrinkage_percent&.to_f,
+        "firing_shrinkage_percent" => obs.firing_shrinkage_percent&.to_f,
+        "boiling_water_absorption_percent" => obs.boiling_water_absorption_percent&.to_f,
         "created_at" => obs.created_at&.utc&.iso8601
       }
     end

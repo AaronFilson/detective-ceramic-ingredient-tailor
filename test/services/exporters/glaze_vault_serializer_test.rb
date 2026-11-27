@@ -195,5 +195,70 @@ module Exporters
       empty_assay = sample.assay_results.create!(oxides: {})
       assert_raises(ArgumentError) { GlazeVaultSerializer.call(empty_assay) }
     end
+
+    test "populates expanded Glaze Vault DataSheet physical fields and observation provenance" do
+      sample = UserSample.create!(title: "Willamette Stoneware Body", material_category: :wild_clay)
+      sample.field_observations.create!(
+        fired_cone: "6",
+        water_of_plasticity: 23.5,
+        drying_shrinkage_percent: 5.2,
+        firing_shrinkage_percent: 6.4,
+        boiling_water_absorption_percent: 1.85
+      )
+      sample.assay_results.create!(
+        source_type: :spatial_heuristic_estimate,
+        oxides: { "SiO2" => 64.0, "Al2O3" => 21.0, "Fe2O3" => 2.2, "CaO" => 1.0, "K2O" => 2.8, "LOI" => 9.0 }
+      )
+
+      payload = GlazeVaultSerializer.call(sample)
+      sheet = payload.dig("materials", 0, "sheet")
+
+      assert_equal(
+        {
+          "cone" => "6",
+          "dryingShrinkage" => "5.2",
+          "firingShrinkage" => "6.4",
+          "totalShrinkage" => "11.6",
+          "absorption" => "1.85",
+          "waterOfPlasticity" => "23.5"
+        },
+        sheet
+      )
+
+      obs_prov = payload.dig("provenance", "field_observations", 0)
+      assert_in_delta 23.5, obs_prov["water_of_plasticity"], 0.001
+      assert_in_delta 5.2, obs_prov["drying_shrinkage_percent"], 0.001
+      assert_in_delta 6.4, obs_prov["firing_shrinkage_percent"], 0.001
+      assert_in_delta 1.85, obs_prov["boiling_water_absorption_percent"], 0.001
+    end
+
+    test "prefers explicit shrinkage_percent for totalShrinkage and merges latest values across observations" do
+      sample = UserSample.create!(title: "Multi-Test Clay", material_category: :wild_clay)
+      sample.field_observations.create!(
+        water_of_plasticity: 25.0,
+        drying_shrinkage_percent: 6.0
+      )
+      sample.field_observations.create!(
+        fired_cone: "10",
+        firing_shrinkage_percent: 6.5,
+        shrinkage_percent: 12.8,
+        boiling_water_absorption_percent: 0.75
+      )
+      sample.assay_results.create!(
+        source_type: :spatial_heuristic_estimate,
+        oxides: { "SiO2" => 65.0, "Al2O3" => 22.0, "Fe2O3" => 1.5, "CaO" => 0.8, "K2O" => 2.2, "LOI" => 8.5 }
+      )
+
+      payload = GlazeVaultSerializer.call(sample)
+      sheet = payload.dig("materials", 0, "sheet")
+
+      assert_equal "10", sheet["cone"]
+      assert_equal "6", sheet["dryingShrinkage"]
+      assert_equal "6.5", sheet["firingShrinkage"]
+      assert_equal "12.8", sheet["totalShrinkage"]
+      assert_equal "0.75", sheet["absorption"]
+      assert_equal "25", sheet["waterOfPlasticity"]
+      assert_equal 2, payload.dig("provenance", "field_observations").length
+    end
   end
 end

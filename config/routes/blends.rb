@@ -1,3 +1,12 @@
 # frozen_string_literal: true
 
-# Local triaxial/line-blend recipe builder & Glazecalc push routes (owned by blends-and-push)
+resources :samples, only: [] do
+  resource :glazecalc_push, only: [ :create ]
+end
+
+resources :blends, only: [ :index, :create ] do
+  collection do
+    get :export_glazecalc
+    get :export_glaze_vault
+  end
+end
