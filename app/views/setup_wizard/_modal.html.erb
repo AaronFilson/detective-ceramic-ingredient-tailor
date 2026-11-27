@@ -1,0 +1,12 @@
+<div
+  id="setup_wizard_modal"
+  role="dialog"
+  aria-modal="true"
+  aria-label="DCI Tailor First-Time Setup Wizard"
+  class="fixed inset-0 z-[1000] bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+>
+  <%= render "setup_wizard/wizard_content",
+    studio_setting: studio_setting,
+    initial_step: 1,
+    modal: true %>
+</div>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_27_000014) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000015) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -274,6 +274,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000014) do
     t.index ["expires_at"], name: "index_solid_queue_semaphores_on_expires_at"
     t.index ["key", "value"], name: "index_solid_queue_semaphores_on_key_and_value"
     t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
+  end
+
+  create_table "studio_settings", force: :cascade do |t|
+    t.string "studio_name", default: "", null: false
+    t.string "home_region_label", default: "Pacific Northwest", null: false
+    t.decimal "default_lat", precision: 8, scale: 5, default: "47.2529", null: false
+    t.decimal "default_lng", precision: 8, scale: 5, default: "-122.4443", null: false
+    t.integer "default_zoom", default: 8, null: false
+    t.string "default_material_category", default: "wild_clay", null: false
+    t.string "default_fired_cone", default: "6", null: false
+    t.string "default_blend_surface", default: "gloss", null: false
+    t.boolean "show_macrostrat_layer", default: true, null: false
+    t.boolean "show_reference_assays_layer", default: true, null: false
+    t.boolean "show_mineral_occurrences_layer", default: true, null: false
+    t.boolean "has_pxrf_workflow", default: false, null: false
+    t.string "preferred_export_target", default: "both", null: false
+    t.string "glazecalc_base_url", default: "https://glazecalc.com", null: false
+    t.datetime "onboarding_completed_at"
+    t.datetime "onboarding_skipped_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "user_samples", force: :cascade do |t|

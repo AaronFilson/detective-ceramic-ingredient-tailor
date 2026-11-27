@@ -1,0 +1,441 @@
+<%
+  setting = local_assigns.fetch(:studio_setting)
+  initial_step = local_assigns.fetch(:initial_step, 1).to_i
+  is_modal = local_assigns.fetch(:modal, false)
+  mindat_ready = defined?(Clients::MindatClient) && Clients::MindatClient.configured?
+  georoc_ready = defined?(Clients::GeorocClient) && Clients::GeorocClient.configured?
+  has_samples = UserSample.exists?
+%>
+
+<div
+  class="flex flex-col bg-[#FCFBF8] rounded-2xl border border-[#D6C7B2] shadow-xl overflow-hidden max-w-3xl w-full mx-auto"
+  data-controller="setup-wizard"
+  data-setup-wizard-step-value="<%= initial_step %>"
+  data-setup-wizard-total-steps-value="4"
+>
+  <%# Wizard Header %>
+  <div class="bg-[#1F1B18] text-[#FAF7F2] px-5 sm:px-6 py-4 border-b border-stone-800 space-y-3">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-[#B84A27] text-[#FAF7F2] font-mono text-xs font-bold shadow-inner shrink-0">
+          SiO₂
+        </span>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 class="text-base sm:text-lg font-bold tracking-tight text-[#FAF7F2]">
+              Welcome to DCI Tailor
+            </h2>
+            <span
+              data-setup-wizard-target="stepCounter"
+              class="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-800 text-amber-200 border border-stone-700"
+            >
+              Step <%= initial_step %> of 4
+            </span>
+          </div>
+          <p class="text-xs text-stone-400">
+            Detective Ceramic Ingredient Tailor — quick feature tour &amp; studio setup
+          </p>
+        </div>
+      </div>
+
+      <% if is_modal %>
+        <%= button_to "Skip for now",
+          skip_setup_path,
+          method: :post,
+          form: { data: { turbo: true } },
+          class: "text-xs font-medium text-stone-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-stone-800 transition-colors cursor-pointer shrink-0" %>
+      <% else %>
+        <%= link_to "← Back to Workbench",
+          root_path(skip_wizard: 1),
+          class: "text-xs font-medium text-stone-300 hover:text-white px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 border border-stone-700 transition-colors shrink-0" %>
+      <% end %>
+    </div>
+
+    <%# Progress Bar + Step Pills %>
+    <div class="space-y-2">
+      <div class="h-1.5 w-full rounded-full bg-stone-800 overflow-hidden">
+        <div
+          data-setup-wizard-target="progressBar"
+          class="h-full rounded-full bg-[#B84A27] transition-all duration-200"
+          style="width: <%= (initial_step / 4.0 * 100).round %>%"
+        ></div>
+      </div>
+
+      <nav aria-label="Setup wizard steps" class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+        <% [
+          [ 1, "1. Feature Tour" ],
+          [ 2, "2. Home Region" ],
+          [ 3, "3. Kiln & Clay" ],
+          [ 4, "4. Tools & Sync" ]
+        ].each do |step_num, label| %>
+          <button
+            type="button"
+            data-setup-wizard-target="stepButton"
+            data-step="<%= step_num %>"
+            data-action="click->setup-wizard#goToStep"
+            data-setup-wizard-step-param="<%= step_num %>"
+            class="px-2.5 py-1.5 rounded-lg border font-semibold text-left truncate transition-colors cursor-pointer"
+          >
+            <%= label %>
+          </button>
+        <% end %>
+      </nav>
+    </div>
+  </div>
+
+  <%= form_with model: setting, url: setup_path, method: :patch, class: "flex flex-col flex-1 min-h-0" do |f| %>
+    <div class="p-5 sm:p-6 space-y-5 overflow-y-auto max-h-[65vh] studio-scroll">
+      <% if setting.errors.any? %>
+        <div class="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-900">
+          <div class="font-semibold mb-1">Please review your studio setup values:</div>
+          <ul class="list-disc pl-4 space-y-0.5">
+            <% setting.errors.full_messages.each do |msg| %>
+              <li><%= msg %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <%# STEP 1: Welcome & Interactive Feature Tour %>
+      <section data-setup-wizard-target="stepPanel" data-step="1" class="space-y-4">
+        <div class="space-y-1">
+          <h3 class="text-base font-bold text-stone-900">
+            Turn Locally Dug Clays &amp; Crushed Rocks Into Usable Ceramic Chemistry
+          </h3>
+          <p class="text-xs sm:text-sm text-stone-600 leading-relaxed">
+            DCI Tailor combines geological maps, soil surveys, hard-rock mineral records, and studio firing tests to estimate oxide analyses, screen kiln hazards, and formulate Cone 6–10 glaze blends.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#B84A27]/12 text-[#963B1D]">01</span>
+              <h4 class="text-xs font-bold text-stone-900">Geological Map, Soils &amp; Hard-Rock Atlas</h4>
+            </div>
+            <p class="text-xs text-stone-600 leading-relaxed">
+              Drop a pin anywhere to pull Macrostrat bedrock polygons, USDA SSURGO / ISRIC SoilGrids v2 digging horizons, USGS DS-801 XRD mineralogy, and nearby MRDS/Mindat deposits.
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#B84A27]/12 text-[#963B1D]">02</span>
+              <h4 class="text-xs font-bold text-stone-900">Studio Diagnostics, Seger UMF &amp; Stull Chart</h4>
+            </div>
+            <p class="text-xs text-stone-600 leading-relaxed">
+              Log vinegar fizz, slaking, plasticity, shrinkage, and cone melt state to refine oxide estimates live on a Stull melt chart with full reasoning badges.
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#1E4E79]/12 text-[#1E4E79]">03</span>
+              <h4 class="text-xs font-bold text-stone-900">Wild-Rock Hazard Screener &amp; pXRF + Kiln LOI</h4>
+            </div>
+            <p class="text-xs text-stone-600 leading-relaxed">
+              Screen heavy metals, fluorine HF kiln gas, pyrite roasting, crystalline silica, and LCT pegmatite K/Rb signals. Upload lab XRF/ICP-MS or handheld pXRF CSVs with studio LOI.
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#1E4E79]/12 text-[#1E4E79]">04</span>
+              <h4 class="text-xs font-bold text-stone-900">Local Glaze Blend Builder &amp; Direct Sync</h4>
+            </div>
+            <p class="text-xs text-stone-600 leading-relaxed">
+              Build 2-material line blends or 3-material triaxial grids targeting Cone 6/10 gloss or matte, then export or push directly to Glazecalc and Glaze Vault.
+            </p>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-[#E8DFD0] bg-white p-3.5">
+          <%= f.label :studio_name, "Studio or Potter Name (Optional)", class: "block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1" %>
+          <%= f.text_field :studio_name,
+            placeholder: "e.g., Puget Sound Clayworks",
+            class: "w-full rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+        </div>
+      </section>
+
+      <%# STEP 2: Home Digging Region & Default Map Layers %>
+      <section data-setup-wizard-target="stepPanel" data-step="2" class="hidden space-y-4">
+        <div class="space-y-1">
+          <h3 class="text-base font-bold text-stone-900">
+            Where Do You Forage Materials?
+          </h3>
+          <p class="text-xs text-stone-600">
+            Choose a home digging region or custom coordinates to center the geological map and pre-fill new sample locations.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <% StudioSetting::REGION_PRESETS.each do |preset| %>
+            <% selected = setting.home_region_label.to_s.casecmp?(preset[:label]) %>
+            <button
+              type="button"
+              data-setup-wizard-target="regionButton"
+              data-action="click->setup-wizard#pickRegion"
+              data-setup-wizard-label-param="<%= preset[:label] %>"
+              data-setup-wizard-lat-param="<%= preset[:lat] %>"
+              data-setup-wizard-lng-param="<%= preset[:lng] %>"
+              data-setup-wizard-zoom-param="<%= preset[:zoom] %>"
+              class="text-left rounded-xl border px-3 py-2.5 transition-colors cursor-pointer <%= selected ? 'border-[#B84A27] bg-[#B84A27]/10 ring-2 ring-[#B84A27]/25' : 'border-[#D6C7B2] bg-white hover:border-[#B84A27]/60' %>"
+            >
+              <div class="text-xs font-bold text-stone-900"><%= preset[:label] %></div>
+              <div class="text-[11px] text-stone-500 leading-snug mt-0.5"><%= preset[:subtitle] %></div>
+            </button>
+          <% end %>
+        </div>
+
+        <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-stone-800">Default Map Center &amp; Zoom</span>
+            <button
+              type="button"
+              data-action="click->setup-wizard#detectLocation"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white hover:bg-stone-100 border border-[#D6C7B2] text-[#1E4E79] text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              Use Browser Location
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+            <div class="sm:col-span-1">
+              <%= f.label :home_region_label, "Region Name", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.text_field :home_region_label,
+                data: { setup_wizard_target: "regionLabelInput" },
+                class: "w-full rounded-lg border border-[#D6C7B2] bg-white px-2.5 py-1.5 text-xs text-stone-900" %>
+            </div>
+            <div>
+              <%= f.label :default_lat, "Latitude (°N)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.number_field :default_lat,
+                step: "0.0001",
+                min: -90,
+                max: 90,
+                data: { setup_wizard_target: "latInput" },
+                class: "w-full rounded-lg border border-[#D6C7B2] bg-white px-2.5 py-1.5 font-mono text-xs tabular-nums text-stone-900" %>
+            </div>
+            <div>
+              <%= f.label :default_lng, "Longitude (°E)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.number_field :default_lng,
+                step: "0.0001",
+                min: -180,
+                max: 180,
+                data: { setup_wizard_target: "lngInput" },
+                class: "w-full rounded-lg border border-[#D6C7B2] bg-white px-2.5 py-1.5 font-mono text-xs tabular-nums text-stone-900" %>
+            </div>
+            <div>
+              <%= f.label :default_zoom, "Map Zoom (2–16)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
+              <%= f.number_field :default_zoom,
+                min: 2,
+                max: 16,
+                data: { setup_wizard_target: "zoomInput" },
+                class: "w-full rounded-lg border border-[#D6C7B2] bg-white px-2.5 py-1.5 font-mono text-xs tabular-nums text-stone-900" %>
+            </div>
+          </div>
+
+          <div data-setup-wizard-target="geoStatus" class="text-[11px] text-stone-500">
+            US pins query USDA SSURGO automatically; international pins fall back to ISRIC SoilGrids v2 (250m global).
+          </div>
+        </div>
+
+        <fieldset class="rounded-xl border border-[#D6C7B2] bg-white p-3.5 space-y-2">
+          <legend class="text-xs font-bold text-stone-800 px-1">Default Geological Map Layers</legend>
+          <label class="flex items-center gap-2.5 text-xs text-stone-700 cursor-pointer">
+            <%= f.check_box :show_macrostrat_layer, class: "rounded border-stone-400 text-[#1E4E79] focus:ring-[#1E4E79]" %>
+            <span><strong>Macrostrat Bedrock Overlay</strong> — surface geologic unit polygons &amp; lithology</span>
+          </label>
+          <label class="flex items-center gap-2.5 text-xs text-stone-700 cursor-pointer">
+            <%= f.check_box :show_reference_assays_layer, class: "rounded border-stone-400 text-[#B84A27] focus:ring-[#B84A27]" %>
+            <span><strong>Reference Assays</strong> — USGS NGDB, EarthChem, GEOROC, NAVDAT &amp; DS-801 XRD points</span>
+          </label>
+          <label class="flex items-center gap-2.5 text-xs text-stone-700 cursor-pointer">
+            <%= f.check_box :show_mineral_occurrences_layer, class: "rounded border-stone-400 text-[#D97706] focus:ring-[#D97706]" %>
+            <span><strong>Hard-Rock Minerals</strong> — USGS MRDS, Mindat &amp; curated PNW glaze mineral quarries</span>
+          </label>
+        </fieldset>
+      </section>
+
+      <%# STEP 3: Kiln Firing Profile & Material Focus %>
+      <section data-setup-wizard-target="stepPanel" data-step="3" class="hidden space-y-4">
+        <div class="space-y-1">
+          <h3 class="text-base font-bold text-stone-900">
+            Configure Your Studio Firing &amp; Testing Profile
+          </h3>
+          <p class="text-xs text-stone-600">
+            Pre-fills new sample categories, default test-tile firing cone, Blend Builder target bands, and Lab/pXRF panels.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-[#D6C7B2] bg-white p-3.5 space-y-2">
+            <%= f.label :default_material_category, "Primary Material Focus", class: "block text-xs font-bold text-stone-800" %>
+            <%= f.select :default_material_category,
+              [
+                [ "Wild Clay (creek banks, glacial till, alluvial seams)", "wild_clay" ],
+                [ "Crushed Rock (basalt, granite, pegmatite, pumice)", "crushed_rock" ],
+                [ "Wood Ash (stove, kiln, or fireplace ash)", "wood_ash" ],
+                [ "Other / Mixed Local Material", "other" ]
+              ],
+              {},
+              class: "w-full rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] px-3 py-2 text-xs text-stone-900" %>
+            <p class="text-[11px] text-stone-500">
+              Pre-selects the material category when logging a new sample in Step 1.
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-[#D6C7B2] bg-white p-3.5 space-y-2">
+            <%= f.label :default_fired_cone, "Primary Kiln Firing Cone", class: "block text-xs font-bold text-stone-800" %>
+            <%= f.select :default_fired_cone,
+              [
+                [ "Cone 06 — Low-Fire Earthenware (~999°C)", "06" ],
+                [ "Cone 6 — Mid-Fire Stoneware (~1222°C)", "6" ],
+                [ "Cone 10 — High-Fire Reduction / Porcelain (~1305°C)", "10" ]
+              ],
+              {},
+              class: "w-full rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] px-3 py-2 text-xs text-stone-900" %>
+            <p class="text-[11px] text-stone-500">
+              Defaults Step 2 test-tile cone and Blend Builder Cone 6 / Cone 10 target bands.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <fieldset class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-2">
+            <legend class="text-xs font-bold text-stone-800 px-1">Preferred Glaze Surface Target</legend>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center gap-2 rounded-lg border border-[#D6C7B2] bg-white px-3 py-2 text-xs font-medium text-stone-800 cursor-pointer">
+                <%= f.radio_button :default_blend_surface, "gloss", class: "text-[#1E4E79] focus:ring-[#1E4E79]" %>
+                <span>Glossy</span>
+              </label>
+              <label class="flex items-center gap-2 rounded-lg border border-[#D6C7B2] bg-white px-3 py-2 text-xs font-medium text-stone-800 cursor-pointer">
+                <%= f.radio_button :default_blend_surface, "matte", class: "text-[#1E4E79] focus:ring-[#1E4E79]" %>
+                <span>Satin / Matte</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <label class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 flex items-start gap-2.5 cursor-pointer">
+            <%= f.check_box :has_pxrf_workflow, class: "mt-0.5 rounded border-stone-400 text-[#1E4E79] focus:ring-[#1E4E79]" %>
+            <span class="space-y-0.5">
+              <span class="block text-xs font-bold text-stone-900">
+                I use Lab XRF / ICP-MS or Handheld pXRF CSVs
+              </span>
+              <span class="block text-[11px] text-stone-600 leading-snug">
+                Automatically expands the Verified Lab / pXRF + Studio Kiln LOI importer in Step 3.
+              </span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <%# STEP 4: Downstream Tools, Export Sync & Live API Readiness %>
+      <section data-setup-wizard-target="stepPanel" data-step="4" class="hidden space-y-4">
+        <div class="space-y-1">
+          <h3 class="text-base font-bold text-stone-900">
+            Glazecalc, Glaze Vault &amp; Geochemical Data Readiness
+          </h3>
+          <p class="text-xs text-stone-600">
+            Configure your preferred downstream glaze software and review connected public geochemical services.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-[#D6C7B2] bg-white p-3.5 space-y-2">
+            <%= f.label :preferred_export_target, "Preferred Downstream App", class: "block text-xs font-bold text-stone-800" %>
+            <%= f.select :preferred_export_target,
+              [
+                [ "Both Glazecalc & Glaze Vault", "both" ],
+                [ "Glazecalc (glaze chemistry & MCP)", "glazecalc" ],
+                [ "Glaze Vault (archival firing sheets)", "glaze_vault" ]
+              ],
+              {},
+              class: "w-full rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] px-3 py-2 text-xs text-stone-900" %>
+          </div>
+
+          <div class="rounded-xl border border-[#D6C7B2] bg-white p-3.5 space-y-2">
+            <%= f.label :glazecalc_base_url, "Glazecalc Instance URL", class: "block text-xs font-bold text-stone-800" %>
+            <%= f.url_field :glazecalc_base_url,
+              placeholder: "https://glazecalc.com",
+              class: "w-full rounded-xl border border-[#D6C7B2] bg-[#FCFBF8] px-3 py-2 font-mono text-xs text-stone-900" %>
+            <p class="text-[11px] text-stone-500">
+              Pre-fills the Step 3 direct PAT push target (personal tokens are never stored).
+            </p>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-2">
+          <div class="text-xs font-bold text-stone-800">Connected Geochemical &amp; Mineral Services</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+            <div class="flex items-center justify-between rounded-lg bg-white border border-[#E8DFD0] px-2.5 py-1.5">
+              <span class="font-medium text-stone-800">Macrostrat + SSURGO + SoilGrids + MRDS</span>
+              <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">Active</span>
+            </div>
+            <div class="flex items-center justify-between rounded-lg bg-white border border-[#E8DFD0] px-2.5 py-1.5">
+              <span class="font-medium text-stone-800">Mindat.org (<code class="font-mono text-[10px]">MINDAT_API_TOKEN</code>)</span>
+              <% if mindat_ready %>
+                <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">Configured</span>
+              <% else %>
+                <span class="px-1.5 py-0.5 rounded font-semibold bg-stone-100 text-stone-600 border border-stone-200">Optional</span>
+              <% end %>
+            </div>
+            <div class="flex items-center justify-between rounded-lg bg-white border border-[#E8DFD0] px-2.5 py-1.5">
+              <span class="font-medium text-stone-800">GEOROC 2.0 (<code class="font-mono text-[10px]">GEOROC_API_KEY</code>)</span>
+              <% if georoc_ready %>
+                <span class="px-1.5 py-0.5 rounded font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">Configured</span>
+              <% else %>
+                <span class="px-1.5 py-0.5 rounded font-semibold bg-stone-100 text-stone-600 border border-stone-200">Optional</span>
+              <% end %>
+            </div>
+            <div class="flex items-center justify-between rounded-lg bg-white border border-[#E8DFD0] px-2.5 py-1.5">
+              <span class="font-medium text-stone-800">Offline Seed Atlas</span>
+              <span class="px-1.5 py-0.5 rounded font-mono font-semibold bg-amber-50 text-amber-900 border border-amber-200">
+                <%= ReferenceAssay.count %> assays · <%= MineralOccurrence.count %> minerals
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <label class="flex items-start gap-2.5 rounded-xl border border-[#B84A27]/30 bg-[#B84A27]/[0.05] px-3.5 py-2.5 cursor-pointer">
+          <%= check_box_tag :create_starter_sample, "1", !has_samples,
+            class: "mt-0.5 rounded border-[#D6C7B2] text-[#B84A27] focus:ring-[#B84A27]" %>
+          <span class="space-y-0.5">
+            <span class="block text-xs font-bold text-stone-900">
+              Create a starter sample at my home coordinates right away
+            </span>
+            <span class="block text-[11px] text-stone-600">
+              Generates an immediate baseline assay so you can jump straight into Step 2 field tests, Stull chart, and Glazecalc export.
+            </span>
+          </span>
+        </label>
+      </section>
+    </div>
+
+    <%# Wizard Footer Controls %>
+    <div class="px-5 sm:px-6 py-3.5 bg-[#FAF7F2] border-t border-[#E8DFD0] flex items-center justify-between gap-3">
+      <button
+        type="button"
+        data-setup-wizard-target="prevButton"
+        data-action="click->setup-wizard#prev"
+        class="px-3.5 py-2 rounded-xl border border-[#D6C7B2] bg-white hover:bg-stone-100 text-stone-700 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+      >
+        ← Back
+      </button>
+
+      <div class="flex items-center gap-2.5">
+        <button
+          type="button"
+          data-setup-wizard-target="nextButton"
+          data-action="click->setup-wizard#next"
+          class="px-4 py-2 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer"
+        >
+          Next Step →
+        </button>
+
+        <%= f.submit "Save Studio Setup & Start",
+          data: { setup_wizard_target: "submitButton" },
+          class: "hidden px-4 py-2 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer" %>
+      </div>
+    </div>
+  <% end %>
+</div>

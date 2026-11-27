@@ -1,4 +1,4 @@
-<% content_for :title, @sample.persisted? ? "#{@sample.title} — TerraAssay Studio" : "New Sample — TerraAssay Studio" %>
+<% content_for :title, @sample.persisted? ? "#{@sample.title} — DCI Tailor" : "New Sample — DCI Tailor" %>
 
 <div
   class="flex flex-col flex-1 min-h-0 lg:h-screen"
@@ -9,7 +9,7 @@
   data-map-picker-lookup-url-value="<%= geologic_lookup_samples_path %>"
   data-map-picker-sample-id-value="<%= @sample.persisted? ? @sample.id : "" %>"
   data-map-picker-macrostrat-opacity-value="0.65"
-  data-map-picker-macrostrat-visible-value="true"
+  data-map-picker-macrostrat-visible-value="<%= @studio_setting.show_macrostrat_layer? %>"
   data-map-picker-reference-assays-value="<%= @reference_assays_payload.to_json %>"
   data-map-picker-mineral-occurrences-value="<%= @mineral_occurrences_payload.to_json %>"
   data-map-picker-boundary-geojson-value="<%= geologic_unit_boundary_geojson(@geologic_unit).to_s %>"
@@ -24,11 +24,18 @@
           SiO₂
         </span>
         <div class="leading-tight">
-          <div class="font-semibold tracking-tight text-sm sm:text-base text-[#FAF7F2]">
-            TerraAssay Studio
+          <div class="flex items-center gap-2">
+            <span class="font-semibold tracking-tight text-sm sm:text-base text-[#FAF7F2]">
+              DCI Tailor
+            </span>
+            <% if @studio_setting.studio_name.present? %>
+              <span class="hidden md:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-800 text-amber-200 border border-stone-700 truncate max-w-[160px]">
+                <%= @studio_setting.studio_name %>
+              </span>
+            <% end %>
           </div>
           <div class="text-[11px] text-stone-400 hidden sm:block">
-            Ceramic Material Assay &amp; Geological Inference Workbench
+            Detective Ceramic Ingredient Tailor
           </div>
         </div>
       <% end %>
@@ -68,6 +75,11 @@
         </div>
       <% end %>
 
+      <%= link_to setup_path,
+        class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs sm:text-sm font-medium transition-colors cursor-pointer" do %>
+        <span>Setup Wizard</span>
+      <% end %>
+
       <%= link_to "/blends",
         class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-[#FAF7F2] border border-stone-600/80 text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer" do %>
         <span>Blend Builder</span>
@@ -100,7 +112,7 @@
           <label class="inline-flex items-center gap-2 font-semibold text-stone-800 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked
+              <%= "checked" if @studio_setting.show_macrostrat_layer? %>
               data-map-picker-target="macrostratToggle"
               data-action="change->map-picker#toggleMacrostrat"
               class="rounded border-stone-400 text-[#1E4E79] focus:ring-[#1E4E79]"
@@ -134,7 +146,7 @@
           <label class="inline-flex items-center gap-2 text-stone-700 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked
+              <%= "checked" if @studio_setting.show_reference_assays_layer? %>
               data-map-picker-target="referenceToggle"
               data-action="change->map-picker#toggleReferenceAssays"
               class="rounded border-stone-400 text-[#B84A27] focus:ring-[#B84A27]"
@@ -148,7 +160,7 @@
           <label class="inline-flex items-center gap-2 text-stone-700 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked
+              <%= "checked" if @studio_setting.show_mineral_occurrences_layer? %>
               data-map-picker-target="mineralToggle"
               data-action="change->map-picker#toggleMineralOccurrences"
               class="rounded border-stone-400 text-[#D97706] focus:ring-[#D97706]"
@@ -325,4 +337,8 @@
       </div>
     </section>
   </main>
+
+  <% if @show_onboarding_wizard %>
+    <%= render "setup_wizard/modal", studio_setting: @studio_setting %>
+  <% end %>
 </div>

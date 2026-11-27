@@ -48,9 +48,10 @@ class SamplesController < ApplicationController
 
   def new
     @saved_samples = recent_samples
+    setting = current_studio_setting
     @sample = build_default_sample(
-      lat: parse_coordinate(params[:lat]) || DEFAULT_LAT,
-      lng: parse_coordinate(params[:lng]) || DEFAULT_LNG
+      lat: parse_coordinate(params[:lat]) || setting.default_lat.to_f,
+      lng: parse_coordinate(params[:lng]) || setting.default_lng.to_f
     )
     load_workbench_context
     render :index
@@ -168,18 +169,21 @@ class SamplesController < ApplicationController
     UserSample.includes(:geologic_unit, :soil_profile, :assay_results).order(updated_at: :desc, id: :desc).limit(30)
   end
 
-  def build_default_sample(lat: DEFAULT_LAT, lng: DEFAULT_LNG)
+  def build_default_sample(lat: nil, lng: nil)
+    setting = current_studio_setting
     UserSample.new(
-      material_category: :wild_clay,
-      latitude: lat,
-      longitude: lng
+      material_category: setting.default_material_category,
+      latitude: lat || setting.default_lat.to_f,
+      longitude: lng || setting.default_lng.to_f
     )
   end
 
   def load_workbench_context
-    @map_lat = @sample.latitude || DEFAULT_LAT
-    @map_lng = @sample.longitude || DEFAULT_LNG
-    @map_zoom = @sample.persisted? ? 10 : DEFAULT_ZOOM
+    @studio_setting = current_studio_setting
+    @show_onboarding_wizard = @studio_setting.onboarding_needed? && params[:skip_wizard].blank?
+    @map_lat = @sample.latitude || @studio_setting.default_lat.to_f
+    @map_lng = @sample.longitude || @studio_setting.default_lng.to_f
+    @map_zoom = @sample.persisted? ? 10 : @studio_setting.default_zoom
     @geologic_unit = @sample.geologic_unit
     @soil_profile = @sample.soil_profile
     @assay_result = @sample.persisted? ? @sample.latest_assay_result : nil
@@ -192,7 +196,7 @@ class SamplesController < ApplicationController
         slaking_behavior: latest&.slaking_behavior,
         plasticity: latest&.plasticity,
         raw_color: latest&.raw_color,
-        fired_cone: latest&.fired_cone,
+        fired_cone: latest&.fired_cone.presence || @studio_setting.default_fired_cone,
         fired_color: latest&.fired_color,
         melt_state: latest&.melt_state,
         shrinkage_percent: latest&.shrinkage_percent,
@@ -202,7 +206,7 @@ class SamplesController < ApplicationController
         boiling_water_absorption_percent: latest&.boiling_water_absorption_percent
       )
     else
-      FieldObservation.new
+      FieldObservation.new(fired_cone: @studio_setting.default_fired_cone)
     end
     @quick_locations = QUICK_LOCATIONS
     @reference_assays_payload = build_reference_assays_payload(@map_lat, @map_lng)
