@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   draw(:lab_assays)
   draw(:blends)
   draw(:mineral_occurrences)
+  draw(:regional_sync)
   draw(:setup)
 
   # Defines the root path route ("/")

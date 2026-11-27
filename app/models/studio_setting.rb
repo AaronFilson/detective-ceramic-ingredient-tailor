@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class StudioSetting < ApplicationRecord
+  belongs_to :user, optional: true
+
   MATERIAL_CATEGORIES = %w[wild_clay crushed_rock wood_ash other].freeze
   CONE_OPTIONS = %w[06 6 10].freeze
   SURFACE_OPTIONS = %w[gloss matte].freeze
