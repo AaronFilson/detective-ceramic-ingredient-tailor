@@ -7,10 +7,17 @@ local:
   root: <%= Rails.root.join("storage") %>
 
 # AWS S3 object storage for hosted multi-user deployments (set ACTIVE_STORAGE_SERVICE=amazon).
-# Uses ECS/Fargate/App Runner IAM task role credentials by default when access keys are omitted.
+# Uses scoped IAM credentials from SSM / .kamal/secrets when AWS_ACCESS_KEY_ID is set
+# (required when EC2 IMDSv2 httpPutResponseHopLimit=1 blocks container metadata access),
+# falling back cleanly to IAM instance/task roles otherwise.
+# Encryption at rest is enforced automatically by the S3 bucket's default SSE-S3 (S3_MANAGED)
+# configuration so browser direct-upload PUTs do not require x-amz-server-side-encryption headers.
 amazon:
   service: S3
   region: <%= ENV.fetch("AWS_REGION", "us-west-2") %>
   bucket: <%= ENV["AWS_S3_BUCKET"] %>
+<% if ENV["AWS_ACCESS_KEY_ID"].present? %>
   access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
+<% end %>
+  public: false

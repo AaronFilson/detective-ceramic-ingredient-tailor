@@ -1,0 +1,149 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Target environment (production -> dci-tailor.glazecalcapp.com, staging -> dci-tailor-staging.glazecalcapp.com)'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: aaronfilson/detective-ceramic-ingredient-tailor
+
+jobs:
+  build:
+    name: Build & Push linux/arm64 Image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Enforce main branch for production deploys
+        if: inputs.destination == 'production' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Production deployments must be dispatched from refs/heads/main (got ${{ github.ref }})."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ (inputs.destination == 'production' && github.ref == 'refs/heads/main') && 'latest' || 'latest-staging' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Kamal Deploy (${{ inputs.destination }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-${{ inputs.destination }}
+      cancel-in-progress: false
+    environment: ${{ inputs.destination }}
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Configure AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN || 'arn:aws:iam::724654236968:role/dci-tailor-deploy' }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Install AWS Session Manager Plugin
+        env:
+          SSM_PLUGIN_VERSION: ${{ vars.SSM_PLUGIN_VERSION || '1.2.694.0' }}
+        run: |
+          curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/${SSM_PLUGIN_VERSION}/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          dpkg-deb --info /tmp/session-manager-plugin.deb >/dev/null
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+          rm -f /tmp/session-manager-plugin.deb
+          session-manager-plugin --version
+
+      - name: Configure SSH over SSM Session Manager
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+        run: |
+          if [ -n "${EC2_INSTANCE_ID:-}" ]; then
+            INSTANCE_ID="$EC2_INSTANCE_ID"
+          else
+            INSTANCE_ID=$(aws ec2 describe-instances --region "$AWS_REGION" \
+              --filters "Name=tag:app,Values=glazecalc" "Name=instance-state-name,Values=running" \
+              --query "Reservations[].Instances[].InstanceId" --output text | tr '\t' '\n' | sed '/^$/d')
+          fi
+          INSTANCE_COUNT=$(printf '%s\n' "$INSTANCE_ID" | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "$INSTANCE_COUNT" -ne 1 ] || ! printf '%s' "$INSTANCE_ID" | grep -Eq '^i-[0-9a-f]{8,17}$'; then
+            echo "::error::Expected a single valid running EC2 instance ID (i-...) in $AWS_REGION, got (${INSTANCE_COUNT}): ${INSTANCE_ID:-<none>}"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          cat > ~/.ssh/config <<EOF
+          Host glazecalc-ec2
+            HostName ${INSTANCE_ID}
+            User ${DCI_TAILOR_SSH_USER:-admin}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            ForwardAgent no
+            ProxyCommand sh -c "aws ssm start-session --region ${AWS_REGION} --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Run Kamal Deploy
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          DESTINATION: ${{ inputs.destination }}
+          VERSION: ${{ github.sha }}
+        run: |
+          if [ "$DESTINATION" = "staging" ]; then
+            bundle exec kamal deploy -d staging --skip-push --version "$VERSION"
+          else
+            bundle exec kamal deploy --skip-push --version "$VERSION"
+          fi

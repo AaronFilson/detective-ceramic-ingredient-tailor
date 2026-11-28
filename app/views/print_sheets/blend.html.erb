@@ -1,0 +1,247 @@
+<% if @error_message.present? %>
+  <% content_for :title, "Unable to Print Blend Sheet — DCI Tailor" %>
+  <section class="border-2 border-stone-900 p-5 space-y-2">
+    <div class="font-mono text-xs font-bold uppercase tracking-wider text-stone-700">DCI Tailor · Blend Bench Sheet</div>
+    <h1 class="text-lg font-extrabold text-stone-950">Unable to Generate Kiln Bench Sheet</h1>
+    <p class="text-xs text-stone-800"><%= @error_message %></p>
+    <div class="pt-2 no-print">
+      <%= link_to "Return to Glaze Blend Builder",
+        blends_path,
+        class: "inline-flex items-center px-3.5 py-1.5 rounded-lg bg-stone-900 text-white text-xs font-semibold" %>
+    </div>
+  </section>
+<% else %>
+  <% optimal = @blend_result.optimal %>
+  <% band = @blend_result.target_band %>
+  <% coe_report = optimal.coe_report %>
+  <% umf = optimal.umf || {} %>
+  <% minor_oxides = (optimal.minor_oxides || {}).select { |_k, v| v.to_f.positive? } %>
+  <% content_for :title, "#{@tile_stamp} · #{@recipe_heading} — DCI Tailor Bench Sheet" %>
+
+  <%# Top Studio Blend Header + Scannable QR Code %>
+  <section class="avoid-break border-b-2 border-stone-900 pb-4 flex items-start justify-between gap-4">
+    <div class="space-y-1.5 min-w-0">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-mono text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 border border-stone-900 bg-stone-900 text-white">
+          DCI Tailor
+        </span>
+        <span class="font-mono text-xs font-bold uppercase tracking-wider text-stone-700">
+          Glaze Batch &amp; Kiln Test-Tile Bench Sheet
+        </span>
+      </div>
+
+      <h1 class="text-xl sm:text-2xl font-extrabold text-stone-950 tracking-tight">
+        <%= @recipe_heading %>
+      </h1>
+
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-800">
+        <span>
+          <strong>Stamp:</strong>
+          <code class="font-mono font-extrabold px-1.5 py-0.5 border border-stone-800 bg-stone-100"><%= @tile_stamp %></code>
+        </span>
+        <span>
+          <strong>Target:</strong> Cone <%= @blend_result.target_cone %> <%= @blend_result.surface.capitalize %> (<%= band[:label] %>)
+        </span>
+        <span>
+          <strong>Stull Zone:</strong> <%= optimal.stull_zone %> (<%= format("%.1f%%", optimal.fit_score) %> Fit)
+        </span>
+        <% if coe_report.present? %>
+          <span class="font-mono px-1.5 py-0.5 border border-stone-800 bg-stone-50 font-semibold">
+            COE <%= format("%.2f", coe_report.coe) %> ×10⁻⁷ /°C · <%= coe_report.risk_label %>
+          </span>
+        <% end %>
+      </div>
+
+      <div class="text-[11px] text-stone-600">
+        Mode: <%= @blend_result.line_blend? ? "2-Material Line Blend (11 steps, 10% increments)" : "3-Material Triaxial Simplex (231 points, 5% increments)" %>
+        · Printed <%= Time.current.strftime("%Y-%m-%d") %>
+      </div>
+    </div>
+
+    <% if @qr_svg.present? %>
+      <div class="shrink-0 flex flex-col items-center gap-1">
+        <div class="qr-box w-24 h-24 border border-stone-800 p-1 bg-white">
+          <%= @qr_svg %>
+        </div>
+        <span class="font-mono text-[9px] uppercase tracking-wider text-stone-600">Scan for Blend</span>
+      </div>
+    <% end %>
+  </section>
+
+  <%# Optimal Dry-Weight Batch Scaling Table (%, 100 g, 500 g, 1,000 g, 5,000 g) %>
+  <section class="avoid-break space-y-2.5">
+    <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+      <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+        1. Optimal Dry-Weight Glaze Batch Scaling Table
+      </h2>
+      <span class="font-mono text-[10px] text-stone-600">
+        Sieve 80–100 mesh · Record specific gravity (target ~1.45–1.50 g/mL)
+      </span>
+    </div>
+
+    <table class="w-full text-xs border-collapse border border-stone-800">
+      <thead>
+        <tr class="bg-stone-100 border-b border-stone-800 text-[10px] uppercase tracking-wider">
+          <th class="py-1.5 px-2.5 text-left font-bold border-r border-stone-400">Material</th>
+          <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400">Source</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400">Recipe %</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400">100 g Cup</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400">500 g Pint</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400">1,000 g (1 kg)</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400">5,000 g Bucket</th>
+          <th class="py-1.5 px-2 text-center font-bold w-14">Weighed</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-300 font-mono tabular-nums">
+        <% @scaled_batch_rows.each do |row| %>
+          <% sample = row[:sample] %>
+          <% is_stock = sample.respond_to?(:stock?) && sample.stock? %>
+          <tr class="<%= row[:percentage].positive? ? '' : 'text-stone-400' %>">
+            <td class="py-2 px-2.5 font-sans font-bold border-r border-stone-400">
+              <%= sample.title %>
+            </td>
+            <td class="py-2 px-2 font-sans text-[11px] border-r border-stone-400">
+              <%= is_stock ? "Studio Stock" : material_category_label(sample.material_category) %>
+            </td>
+            <td class="py-2 px-2 text-right font-bold border-r border-stone-400">
+              <%= format("%.1f%%", row[:percentage]) %>
+            </td>
+            <td class="py-2 px-2 text-right border-r border-stone-400">
+              <%= format("%.1f g", row[:grams][100]) %>
+            </td>
+            <td class="py-2 px-2 text-right border-r border-stone-400">
+              <%= format("%.1f g", row[:grams][500]) %>
+            </td>
+            <td class="py-2 px-2 text-right border-r border-stone-400">
+              <%= format("%.1f g", row[:grams][1000]) %>
+            </td>
+            <td class="py-2 px-2 text-right border-r border-stone-400">
+              <%= format("%.1f g", row[:grams][5000]) %>
+            </td>
+            <td class="py-2 px-2 text-center">[ &nbsp; ]</td>
+          </tr>
+        <% end %>
+      </tbody>
+      <tfoot>
+        <tr class="bg-stone-100 border-t border-stone-800 font-mono font-extrabold">
+          <td colspan="2" class="py-1.5 px-2.5 font-sans border-r border-stone-400">Total Dry Batch Weight</td>
+          <td class="py-1.5 px-2 text-right border-r border-stone-400">100.0%</td>
+          <td class="py-1.5 px-2 text-right border-r border-stone-400">100.0 g</td>
+          <td class="py-1.5 px-2 text-right border-r border-stone-400">500.0 g</td>
+          <td class="py-1.5 px-2 text-right border-r border-stone-400">1000.0 g</td>
+          <td class="py-1.5 px-2 text-right border-r border-stone-400">5000.0 g</td>
+          <td class="py-1.5 px-2"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>
+
+  <%# Predicted Seger UMF + Minor Oxides + COE Summary %>
+  <section class="avoid-break space-y-2">
+    <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+      <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+        2. Predicted Optimal Seger UMF &amp; Thermal Expansion Fit
+      </h2>
+      <span class="font-mono text-[10px] text-stone-600">
+        Eq. Wt <%= format("%.1f", umf["equivalent_weight"].to_f) %> · Est. LOI <%= format("%.1f%%", optimal.oxides["LOI"].to_f) %>
+      </span>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">SiO₂ (mol)</div>
+        <div class="text-sm font-extrabold"><%= format("%.2f", optimal.sio2) %></div>
+        <div class="text-[10px] text-stone-500">Band <%= band[:sio2].begin %>–<%= band[:sio2].end %></div>
+      </div>
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">Al₂O₃ (mol)</div>
+        <div class="text-sm font-extrabold"><%= format("%.2f", optimal.al2o3) %></div>
+        <div class="text-[10px] text-stone-500">Band <%= band[:al2o3].begin %>–<%= band[:al2o3].end %></div>
+      </div>
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">SiO₂ : Al₂O₃</div>
+        <div class="text-sm font-extrabold">
+          <%= optimal.si_al_ratio.present? ? "#{format('%.2f', optimal.si_al_ratio)} : 1" : "—" %>
+        </div>
+        <div class="text-[10px] text-stone-500">Band <%= band[:si_al].begin %>–<%= band[:si_al].end %></div>
+      </div>
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">R₂O / RO Flux</div>
+        <div class="text-sm font-extrabold"><%= format("%.2f / %.2f", optimal.r2o_total, optimal.ro_total) %></div>
+        <div class="text-[10px] text-stone-500">Unity = 1.00</div>
+      </div>
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">B₂O₃ / Li₂O</div>
+        <div class="text-sm font-extrabold"><%= format("%.2f / %.2f", optimal.b2o3, optimal.li2o) %></div>
+        <div class="text-[10px] text-stone-500">Melters (mol)</div>
+      </div>
+    </div>
+
+    <% if minor_oxides.any? %>
+      <div class="text-xs font-mono border border-stone-300 p-2 bg-stone-50">
+        <strong>Blended Minor Oxides (wt%):</strong>
+        <%= minor_oxides.map { |ox, val| "#{ox} #{format('%.2f%%', val.to_f)}" }.join(" · ") %>
+      </div>
+    <% end %>
+
+    <% if coe_report.present? %>
+      <div class="text-xs border border-stone-400 p-2">
+        <strong>Glaze Fit Note (<%= format("%.2f", coe_report.coe) %> ×10⁻⁷ /°C — <%= coe_report.risk_label %>):</strong>
+        <%= coe_report.guidance %>
+      </div>
+    <% end %>
+  </section>
+
+  <%# Test-Tile Line / Triaxial Cup Checklist %>
+  <section class="avoid-break space-y-2.5">
+    <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+      <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+        3. <%= @blend_result.line_blend? ? "11-Step Line-Blend Test Cup Checklist" : "Top 12 Triaxial Simplex Test Cup Checklist" %>
+      </h2>
+      <span class="font-mono text-[10px] text-stone-600">
+        Materials: <%= @blend_result.samples.map(&:title).join(" / ") %>
+      </span>
+    </div>
+
+    <table class="w-full text-xs border-collapse border border-stone-800">
+      <thead>
+        <tr class="bg-stone-100 border-b border-stone-800 text-[10px] uppercase tracking-wider">
+          <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400 w-16">Tile #</th>
+          <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400">Proportions (100 g Test Cup)</th>
+          <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400 w-36">Predicted Zone</th>
+          <th class="py-1.5 px-2 text-right font-bold border-r border-stone-400 w-16">Si:Al</th>
+          <th class="py-1.5 px-2 text-left font-bold">Kiln Shelf / Fired Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-300">
+        <% @test_cup_candidates.each_with_index do |candidate, idx| %>
+          <% tile_code = format("T%02d", idx + 1) %>
+          <% is_opt = candidate == optimal %>
+          <% cup_weights = candidate.weights.map { |w| "#{w[:percentage]}g #{w[:sample].title.to_s.truncate(16)}" }.join(" + ") %>
+          <tr class="<%= is_opt ? 'bg-stone-100 font-semibold' : '' %>">
+            <td class="py-1.5 px-2 font-mono font-bold border-r border-stone-400 whitespace-nowrap">
+              <%= tile_code %><%= is_opt ? " *" : "" %>
+            </td>
+            <td class="py-1.5 px-2 font-mono text-[11px] border-r border-stone-400">
+              <div><%= candidate.batch_label %></div>
+              <div class="text-[10px] text-stone-600"><%= cup_weights %></div>
+            </td>
+            <td class="py-1.5 px-2 border-r border-stone-400">
+              <%= candidate.stull_zone %> (<%= format("%.0f%%", candidate.fit_score) %>)
+            </td>
+            <td class="py-1.5 px-2 font-mono text-right border-r border-stone-400">
+              <%= candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "—" %>
+            </td>
+            <td class="py-1.5 px-2 text-stone-400 font-mono text-[10px]">
+              [ &nbsp; ] ________________________
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+
+    <p class="text-[10px] font-mono text-stone-600">
+      * Starred tile marks the highest-scoring <%= band[:label] %> candidate. Always fire wild-clay / wood-ash test tiles on a cookie or catch-dish for first melt tests.
+    </p>
+  </section>
+<% end %>

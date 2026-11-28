@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class SamplesController < ApplicationController
+  rate_limit to: 30, within: 1.minute, only: :geologic_lookup, with: -> { head :too_many_requests }
+
   DEFAULT_LAT = 47.2529
   DEFAULT_LNG = -122.4443
   DEFAULT_ZOOM = 8
@@ -59,7 +61,7 @@ class SamplesController < ApplicationController
 
   def show
     @saved_samples = recent_samples
-    @sample = UserSample
+    @sample = scoped_samples
       .with_attached_outcrop_photos
       .includes(
         :geologic_unit,
@@ -79,6 +81,7 @@ class SamplesController < ApplicationController
     attrs = sample_params
     new_photos = extract_uploaded_photos(attrs.delete(:outcrop_photos))
     @sample = UserSample.new(attrs)
+    assign_sample_ownership(@sample)
     exif_pin_note = apply_exif_gps_if_present!(@sample, new_photos)
     assign_geologic_unit_if_needed!(@sample)
     assign_cached_soil_profile_if_needed!(@sample)
@@ -99,7 +102,7 @@ class SamplesController < ApplicationController
   end
 
   def update
-    @sample = UserSample.with_attached_outcrop_photos.find(params[:id])
+    @sample = scoped_samples.with_attached_outcrop_photos.find(params[:id])
     prev_coords = [ @sample.latitude, @sample.longitude ]
     prev_unit_id = @sample.geologic_unit_id
     attrs = sample_params
@@ -135,7 +138,7 @@ class SamplesController < ApplicationController
   end
 
   def destroy
-    @sample = UserSample.find(params[:id])
+    @sample = scoped_samples.find(params[:id])
     title = @sample.title
     @sample.destroy
     redirect_to root_path, notice: "Sample \"#{title}\" deleted."
@@ -195,7 +198,7 @@ class SamplesController < ApplicationController
   private
 
   def recent_samples
-    UserSample
+    scoped_samples
       .with_attached_outcrop_photos
       .includes(:geologic_unit, :soil_profile, :assay_results)
       .order(updated_at: :desc, id: :desc)
@@ -265,7 +268,7 @@ class SamplesController < ApplicationController
       .map do |assay|
         {
           id: assay.id,
-          external_id: assay.external_id,
+          external_id: assay.coordinate_privacy == "fuzzed_2km" ? nil : assay.external_id,
           source: assay.source,
           rock_type: assay.rock_type,
           lat: assay.latitude&.round(5),
@@ -371,7 +374,7 @@ class SamplesController < ApplicationController
       (sample.latitude.nil? && sample.longitude.nil?)
     return nil unless should_auto_pin
 
-    coords = uploaded_photos.lazy.filter_map { |photo| Media::ExifGpsExtractor.extract(photo) }.first
+    coords = uploaded_photos.lazy.filter_map { |photo| extract_photo_exif_gps(photo) }.first
     return nil unless coords
 
     sample.latitude = coords[:latitude]
@@ -381,6 +384,19 @@ class SamplesController < ApplicationController
       coords[:latitude],
       coords[:longitude]
     )
+  end
+
+  def extract_photo_exif_gps(photo)
+    if photo.is_a?(String) && !photo.b.start_with?("\xFF\xD8".b)
+      blob = ActiveStorage::Blob.find_signed(photo)
+      return nil unless blob
+
+      return blob.open { |tf| Media::ExifGpsExtractor.extract(tf) }
+    end
+
+    Media::ExifGpsExtractor.extract(photo)
+  rescue StandardError
+    nil
   end
 
   def sample_params

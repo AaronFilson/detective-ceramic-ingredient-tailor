@@ -204,6 +204,33 @@ class RegionalAtlasSyncJobTest < ActiveJob::TestCase
     assert_includes setting.regional_sync_summary, "unexpected socket panic"
   end
 
+  test "writes tile dedupe cache key after successful sync and leaves cache untouched on failure" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    setting = StudioSetting.current
+    tile_key = RegionalAtlasSyncJob.tile_cache_key(lat: TACOMA_LAT, lng: TACOMA_LNG, radius_km: 150)
+
+    original = Clients::UsgsMrdsClient.method(:search_nearby)
+    Clients::UsgsMrdsClient.define_singleton_method(:search_nearby) { |**| raise RuntimeError, "upstream timeout" }
+    begin
+      err_result = RegionalAtlasSyncJob.perform_now(setting.id, lat: TACOMA_LAT, lng: TACOMA_LNG, radius_km: 150)
+    ensure
+      Clients::UsgsMrdsClient.define_singleton_method(:search_nearby, original)
+    end
+
+    assert_equal "error", err_result[:status]
+    assert_not Rails.cache.exist?(tile_key), "Failed sync must never poison the 15-minute tile cache"
+
+    stub_mrds_response(features: [])
+    stub_sciencebase_catalog(csv_url: nil)
+
+    ok_result = RegionalAtlasSyncJob.perform_now(setting.id, lat: TACOMA_LAT, lng: TACOMA_LNG, radius_km: 150)
+    assert_equal "synced", ok_result[:status]
+    assert Rails.cache.exist?(tile_key), "Successful sync must write the shared tile dedupe cache key"
+  ensure
+    Rails.cache = original_cache
+  end
+
   private
 
   def stub_mrds_response(features:)

@@ -30,7 +30,7 @@ class GlazecalcPushesController < ApplicationController
   private
 
   def set_sample
-    @sample = UserSample.includes(:geologic_unit, :field_observations, :assay_results).find(params[:sample_id])
+    @sample = scoped_samples.includes(:geologic_unit, :field_observations, :assay_results).find(params[:sample_id])
   end
 
   def extract_param(key)

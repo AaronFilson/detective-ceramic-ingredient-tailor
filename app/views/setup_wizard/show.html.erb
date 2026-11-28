@@ -16,12 +16,16 @@
       </div>
     <% end %>
 
-    <% if @studio_setting.onboarding_completed? || @studio_setting.onboarding_skipped_at.present? %>
-      <%= button_to "Reset First-Time Prompt",
-        reset_setup_path,
-        method: :post,
-        class: "px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 text-xs font-medium transition-colors cursor-pointer" %>
-    <% end %>
+    <div class="flex items-center gap-2.5 flex-wrap">
+      <% if @studio_setting.onboarding_completed? || @studio_setting.onboarding_skipped_at.present? %>
+        <%= button_to "Reset First-Time Prompt",
+          reset_setup_path,
+          method: :post,
+          class: "px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 text-xs font-medium transition-colors cursor-pointer" %>
+      <% end %>
+
+      <%= render "shared/auth_header_controls" %>
+    </div>
   </header>
 
   <% if flash[:notice].present? || flash[:alert].present? %>

@@ -1,0 +1,8 @@
+<p>Hello <%= @user.name.presence || @user.email %>,</p>
+
+<p>
+  You can reset your DCI Tailor studio password within the next 30 minutes on
+  <%= link_to "this password reset page", edit_password_url(@reset_token) %>.
+</p>
+
+<p>If you did not request a password reset, you can safely ignore this email.</p>

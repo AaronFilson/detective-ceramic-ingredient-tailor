@@ -341,6 +341,13 @@
           export_glaze_vault_path(sample, download: true),
           data: { turbo: false },
           class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
+
+        <%= link_to "Print Kiln Bench Sheet",
+          print_sample_sheet_path(sample),
+          target: "_blank",
+          rel: "noopener",
+          data: { turbo: false },
+          class: "inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-900 border border-[#D6C7B2] text-xs font-semibold transition-colors" %>
       </div>
 
       <%# Read-only Copyable API URL Badge %>

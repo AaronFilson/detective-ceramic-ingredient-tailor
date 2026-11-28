@@ -1,0 +1,470 @@
+<% optimal = blend_result.optimal %>
+<% optimal_palette = stull_zone_svg_palette(optimal.stull_zone) %>
+<% zone_counts = blend_result.zone_counts %>
+
+<section
+  data-controller="simplex-map"
+  data-simplex-heatmap
+  class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden"
+>
+  <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#1E4E79] text-white">
+          <%= blend_result.triaxial? ? "Triaxial Simplex Map" : "Line-Blend Melt Strip" %>
+        </span>
+        <h3 class="text-sm font-bold text-stone-900 tracking-tight">
+          <%= blend_result.triaxial? ? "Interactive 231-Point Stull Zone Simplex Heatmap" : "Interactive 11-Tile Ceramic Line-Blend Test Bar (T01–T11)" %>
+        </h3>
+      </div>
+      <p class="text-[11px] text-stone-500 mt-0.5">
+        <% if blend_result.triaxial? %>
+          Hover, focus, or click any 5%-step ternary point to inspect predicted Seger UMF, thermal expansion COE, and <%= blend_result.target_band[:label] %> fit.
+        <% else %>
+          Hover or click tiles T01 (0/100) through T11 (100/0) to inspect step-by-step melt progression across both materials.
+        <% end %>
+      </p>
+    </div>
+
+    <button
+      type="button"
+      data-action="click->simplex-map#resetOptimal"
+      class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white hover:bg-stone-100 text-stone-800 border border-[#D6C7B2] transition-colors cursor-pointer"
+    >
+      Reset to Optimal
+    </button>
+  </div>
+
+  <div class="p-5 space-y-5">
+    <% if blend_result.triaxial? %>
+      <% svg_w = 500 %>
+      <% svg_h = 430 %>
+      <% svg_pad = 52 %>
+      <% apex_a = simplex_svg_coordinates(100, 0, 0, width: svg_w, height: svg_h, padding: svg_pad) %>
+      <% apex_b = simplex_svg_coordinates(0, 100, 0, width: svg_w, height: svg_h, padding: svg_pad) %>
+      <% apex_c = simplex_svg_coordinates(0, 0, 100, width: svg_w, height: svg_h, padding: svg_pad) %>
+      <% grid_lines = simplex_grid_lines(width: svg_w, height: svg_h, padding: svg_pad) %>
+      <% opt_pcts = optimal.weights.map { |w| w[:percentage] } %>
+      <% opt_coords = simplex_svg_coordinates(opt_pcts[0], opt_pcts[1], opt_pcts[2], width: svg_w, height: svg_h, padding: svg_pad) %>
+      <% focusable_set = blend_result.top_candidates(24).to_set << optimal %>
+      <% mat_a, mat_b, mat_c = blend_result.samples %>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <%# Inline SVG Ternary Simplex Diagram %>
+        <div class="lg:col-span-7 rounded-xl border border-[#E8DFD0] bg-white p-2.5">
+          <svg
+            viewBox="0 0 <%= svg_w %> <%= svg_h %>"
+            role="img"
+            aria-label="Triaxial glaze simplex Stull zone map"
+            class="w-full h-auto block select-none"
+          >
+            <title>Triaxial Glaze Simplex Stull Zone Map — <%= blend_result.samples.map(&:title).join(" / ") %></title>
+            <desc>Equilateral ternary diagram plotting 231 glaze candidates at 5% increments across <%= mat_a.title %> (top apex), <%= mat_b.title %> (bottom-left), and <%= mat_c.title %> (bottom-right), colored by predicted Stull melt zone.</desc>
+
+            <%# Equilateral Simplex Triangle Base %>
+            <polygon
+              points="<%= "#{apex_a[:x]},#{apex_a[:y]} #{apex_b[:x]},#{apex_b[:y]} #{apex_c[:x]},#{apex_c[:y]}" %>"
+              fill="#FAF7F2"
+              stroke="#A8A29E"
+              stroke-width="1.5"
+              stroke-linejoin="round"
+            />
+
+            <%# 20%-Interval Ternary Grid Lines Parallel to All 3 Edges %>
+            <g data-simplex-grid>
+              <% grid_lines.each do |line| %>
+                <line
+                  x1="<%= line[:x1] %>"
+                  y1="<%= line[:y1] %>"
+                  x2="<%= line[:x2] %>"
+                  y2="<%= line[:y2] %>"
+                  stroke="#78716C"
+                  stroke-opacity="0.22"
+                  stroke-width="1"
+                  stroke-dasharray="3 3"
+                />
+              <% end %>
+
+              <%# Edge Percentage Tick Labels (20, 40, 60, 80%) %>
+              <% [ 20, 40, 60, 80 ].each do |pct| %>
+                <% left_tick = simplex_svg_coordinates(pct, 100 - pct, 0, width: svg_w, height: svg_h, padding: svg_pad) %>
+                <% bottom_tick = simplex_svg_coordinates(0, 100 - pct, pct, width: svg_w, height: svg_h, padding: svg_pad) %>
+                <text
+                  x="<%= (left_tick[:x] - 9).round(2) %>"
+                  y="<%= (left_tick[:y] + 3).round(2) %>"
+                  fill="#78716C"
+                  font-size="9"
+                  font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  text-anchor="end"
+                ><%= pct %>%</text>
+                <text
+                  x="<%= bottom_tick[:x] %>"
+                  y="<%= (bottom_tick[:y] + 14).round(2) %>"
+                  fill="#78716C"
+                  font-size="9"
+                  font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  text-anchor="middle"
+                ><%= pct %>%</text>
+              <% end %>
+            </g>
+
+            <%# Optimal Gold/Terracotta Bullseye Halo (under candidate circles) %>
+            <g data-simplex-optimal-halo pointer-events="none">
+              <circle
+                cx="<%= opt_coords[:x] %>"
+                cy="<%= opt_coords[:y] %>"
+                r="14"
+                fill="#D97706"
+                fill-opacity="0.20"
+              />
+              <circle
+                cx="<%= opt_coords[:x] %>"
+                cy="<%= opt_coords[:y] %>"
+                r="10"
+                fill="none"
+                stroke="#B84A27"
+                stroke-width="2"
+                stroke-dasharray="3 2"
+              />
+            </g>
+
+            <%# All 231 Simplex Candidate Points %>
+            <g data-simplex-points>
+              <% blend_result.candidates.each do |candidate| %>
+                <% pcts = candidate.weights.map { |w| w[:percentage] } %>
+                <% pt = simplex_svg_coordinates(pcts[0], pcts[1], pcts[2], width: svg_w, height: svg_h, padding: svg_pad) %>
+                <% palette = stull_zone_svg_palette(candidate.stull_zone) %>
+                <% is_opt = candidate == optimal %>
+                <% norm_fit = (candidate.fit_score.to_f / 100.0).clamp(0.0, 1.0) %>
+                <% radius = is_opt ? 6.6 : (3.3 + (norm_fit * 2.3)).round(2) %>
+                <% opacity = is_opt ? 1.0 : (0.38 + (norm_fit * 0.56)).round(2) %>
+                <% batch_str = simplex_candidate_batch_summary(candidate) %>
+                <% si_al_str = candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "—" %>
+                <% coe_str = candidate.coe.present? ? format("%.1f", candidate.coe) : "—" %>
+                <% coe_risk_str = candidate.coe_report&.risk_label || "Unrated" %>
+                <% fit_str = format("%.1f%%", candidate.fit_score) %>
+
+                <circle
+                  data-simplex-point
+                  <% if is_opt %>data-simplex-optimal="true" data-selected="true"<% end %>
+                  data-optimal="<%= is_opt %>"
+                  data-batch="<%= batch_str %>"
+                  data-sio2="<%= format('%.2f', candidate.sio2) %>"
+                  data-al2o3="<%= format('%.2f', candidate.al2o3) %>"
+                  data-b2o3="<%= format('%.2f', candidate.b2o3) %>"
+                  data-si-al="<%= si_al_str %>"
+                  data-r2o="<%= format('%.2f', candidate.r2o_total) %>"
+                  data-ro="<%= format('%.2f', candidate.ro_total) %>"
+                  data-coe="<%= coe_str %>"
+                  data-coe-risk="<%= coe_risk_str %>"
+                  data-zone="<%= candidate.stull_zone %>"
+                  data-fit="<%= fit_str %>"
+                  data-action="mouseenter->simplex-map#selectCandidate focus->simplex-map#selectCandidate click->simplex-map#selectCandidate keydown->simplex-map#handleKeydown"
+                  <% if focusable_set.include?(candidate) %>
+                    tabindex="0"
+                    role="button"
+                    aria-pressed="<%= is_opt %>"
+                    aria-label="<%= "#{batch_str}, #{candidate.stull_zone}, Fit #{fit_str}" %>"
+                  <% end %>
+                  cx="<%= pt[:x] %>"
+                  cy="<%= pt[:y] %>"
+                  r="<%= radius %>"
+                  fill="<%= palette[:fill] %>"
+                  fill-opacity="<%= opacity %>"
+                  stroke="<%= is_opt ? '#FDE68A' : palette[:stroke] %>"
+                  stroke-width="<%= is_opt ? '2.2' : '0.9' %>"
+                  class="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E4E79]"
+                >
+                  <title><%= "#{batch_str} | #{candidate.stull_zone} | SiO2 #{format('%.2f', candidate.sio2)}, Al2O3 #{format('%.2f', candidate.al2o3)}, Si:Al #{si_al_str} | COE #{coe_str} | Fit #{fit_str}" %></title>
+                </circle>
+              <% end %>
+            </g>
+
+            <%# Live Active Selection Ring %>
+            <circle
+              data-simplex-map-target="activeRing"
+              cx="<%= opt_coords[:x] %>"
+              cy="<%= opt_coords[:y] %>"
+              r="9.2"
+              fill="none"
+              stroke="#B84A27"
+              stroke-width="2.2"
+              pointer-events="none"
+            />
+
+            <%# Material Apex Badges: A (Top), B (Bottom-Left), C (Bottom-Right) %>
+            <g data-simplex-apex-labels font-family="ui-sans-serif, system-ui, sans-serif">
+              <text
+                x="<%= apex_a[:x] %>"
+                y="18"
+                fill="#B84A27"
+                font-size="10"
+                font-weight="800"
+                text-anchor="middle"
+              >A · 100% <%= truncate(mat_a.title.to_s, length: 28) %></text>
+              <text
+                x="<%= apex_a[:x] %>"
+                y="31"
+                fill="#57534E"
+                font-size="9"
+                font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                text-anchor="middle"
+              >Top Apex</text>
+
+              <text
+                x="<%= [ apex_b[:x] - 28, 12 ].max.round(2) %>"
+                y="<%= (apex_b[:y] + 28).round(2) %>"
+                fill="#1E4E79"
+                font-size="10"
+                font-weight="800"
+                text-anchor="start"
+              >B · 100% <%= truncate(mat_b.title.to_s, length: 24) %></text>
+
+              <text
+                x="<%= [ apex_c[:x] + 28, svg_w - 12 ].min.round(2) %>"
+                y="<%= (apex_c[:y] + 28).round(2) %>"
+                fill="#2F6F5E"
+                font-size="10"
+                font-weight="800"
+                text-anchor="end"
+              >C · 100% <%= truncate(mat_c.title.to_s, length: 24) %></text>
+            </g>
+          </svg>
+        </div>
+
+        <%# Right-Hand Live Simplex Inspector Card + Stull Zone Legend %>
+        <div class="lg:col-span-5 space-y-4">
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                Live Simplex Inspector
+              </span>
+              <div class="flex items-center gap-1.5">
+                <span
+                  data-simplex-map-target="optimalBadge"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[#B84A27] text-white"
+                >
+                  Optimal Point
+                </span>
+                <span
+                  data-simplex-map-target="fit"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#1F1B18] text-amber-200 tabular-nums"
+                >
+                  <%= format("%.1f%% Fit", optimal.fit_score) %>
+                </span>
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">Batch Proportions</div>
+              <div
+                data-simplex-map-target="batch"
+                class="font-mono text-xs font-bold text-stone-900 leading-snug"
+              >
+                <%= simplex_candidate_batch_summary(optimal) %>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-[#E8DFD0]">
+              <span class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">Predicted Stull Zone</span>
+              <span
+                data-simplex-map-target="zone"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border <%= optimal_palette[:badge_classes] %>"
+              >
+                <%= optimal.stull_zone %>
+              </span>
+            </div>
+
+            <div class="space-y-1 pt-2 border-t border-[#E8DFD0]">
+              <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">Predicted Seger UMF</div>
+              <div
+                data-simplex-map-target="umf"
+                class="font-mono text-xs text-stone-800 tabular-nums leading-relaxed"
+              >
+                <%= simplex_candidate_umf_summary(optimal) %>
+              </div>
+            </div>
+
+            <div class="space-y-1 pt-2 border-t border-[#E8DFD0]">
+              <div class="text-[10px] uppercase tracking-wider font-semibold text-stone-500">Thermal Expansion (COE)</div>
+              <div
+                data-simplex-map-target="coe"
+                class="font-mono text-xs font-semibold text-stone-900 tabular-nums"
+              >
+                <%= simplex_candidate_coe_summary(optimal) %>
+              </div>
+            </div>
+          </div>
+
+          <%# Stull Zone Color Legend with Candidate Counts %>
+          <div class="rounded-xl border border-[#E8DFD0] bg-white p-3.5 space-y-2">
+            <div class="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-stone-600">
+              <span>Stull Melt Zone Legend</span>
+              <span class="font-mono text-stone-500"><%= blend_result.candidates.size %> pts</span>
+            </div>
+            <div class="space-y-1.5">
+              <% Chemistry::BlendRecipeBuilder::STULL_ZONES.each do |zone_name| %>
+                <% pal = stull_zone_svg_palette(zone_name) %>
+                <% count = zone_counts[zone_name].to_i %>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="inline-flex items-center gap-2 text-stone-800 font-medium">
+                    <span
+                      class="w-3 h-3 rounded-full shrink-0 border"
+                      style="background-color: <%= pal[:fill] %>; border-color: <%= pal[:stroke] %>;"
+                    ></span>
+                    <span><%= pal[:label] %></span>
+                  </span>
+                  <span class="font-mono text-[11px] font-semibold text-stone-600 tabular-nums">
+                    <%= count %>
+                  </span>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <%# 11-Tile Ceramic Line-Blend Test Bar (0/100 -> 100/0) %>
+      <% mat_a, mat_b = blend_result.samples %>
+      <% optimal_tile_code = format("T%02d", (blend_result.candidates.index(optimal) || 0) + 1) %>
+      <div class="space-y-4" data-line-blend-strip>
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-stone-700">
+          <span>0% <%= truncate(mat_a.title.to_s, length: 28) %> / 100% <%= truncate(mat_b.title.to_s, length: 28) %></span>
+          <span>100% <%= truncate(mat_a.title.to_s, length: 28) %> / 0% <%= truncate(mat_b.title.to_s, length: 28) %></span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-11 gap-2">
+          <% blend_result.candidates.each_with_index do |candidate, idx| %>
+            <% tile_code = format("T%02d", idx + 1) %>
+            <% is_opt = candidate == optimal %>
+            <% palette = stull_zone_svg_palette(candidate.stull_zone) %>
+            <% batch_str = line_blend_tile_batch_summary(candidate, tile_code) %>
+            <% si_al_str = candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "—" %>
+            <% coe_str = candidate.coe.present? ? format("%.1f", candidate.coe) : "—" %>
+            <% coe_risk_str = candidate.coe_report&.risk_label || "Unrated" %>
+            <% fit_str = format("%.1f%%", candidate.fit_score) %>
+
+            <button
+              type="button"
+              data-line-tile="<%= tile_code %>"
+              data-optimal="<%= is_opt %>"
+              data-batch="<%= batch_str %>"
+              data-sio2="<%= format('%.2f', candidate.sio2) %>"
+              data-al2o3="<%= format('%.2f', candidate.al2o3) %>"
+              data-b2o3="<%= format('%.2f', candidate.b2o3) %>"
+              data-si-al="<%= si_al_str %>"
+              data-r2o="<%= format('%.2f', candidate.r2o_total) %>"
+              data-ro="<%= format('%.2f', candidate.ro_total) %>"
+              data-coe="<%= coe_str %>"
+              data-coe-risk="<%= coe_risk_str %>"
+              data-zone="<%= candidate.stull_zone %>"
+              data-fit="<%= fit_str %>"
+              data-action="mouseenter->simplex-map#selectCandidate focus->simplex-map#selectCandidate click->simplex-map#selectCandidate keydown->simplex-map#handleKeydown"
+              aria-pressed="<%= is_opt %>"
+              class="rounded-xl border border-[#D6C7B2] bg-white p-2.5 text-left flex flex-col justify-between gap-2 transition-all cursor-pointer hover:border-stone-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E4E79] <%= is_opt ? 'ring-2 ring-[#B84A27] ring-offset-1' : '' %>"
+            >
+              <div class="space-y-1.5 w-full">
+                <div class="flex items-center justify-between gap-1">
+                  <span class="font-mono text-[11px] font-bold text-stone-900"><%= tile_code %></span>
+                  <% if is_opt %>
+                    <span class="px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[#B84A27] text-white">
+                      Best
+                    </span>
+                  <% end %>
+                </div>
+
+                <div
+                  class="h-7 w-full rounded-lg border"
+                  style="background-color: <%= palette[:fill] %>; border-color: <%= palette[:stroke] %>;"
+                  title="<%= candidate.stull_zone %>"
+                ></div>
+
+                <div class="font-mono text-[10px] font-semibold text-stone-700 tabular-nums">
+                  <%= candidate.weights.map { |w| w[:percentage] }.join("/") %>
+                </div>
+              </div>
+
+              <div class="w-full space-y-1">
+                <div class="h-1.5 w-full rounded-full bg-stone-200 overflow-hidden">
+                  <div
+                    class="h-full rounded-full bg-[#1F1B18]"
+                    style="width: <%= candidate.fit_score.clamp(4.0, 100.0).round(1) %>%"
+                  ></div>
+                </div>
+                <div class="font-mono text-[10px] text-stone-600 tabular-nums text-right">
+                  <%= fit_str %>
+                </div>
+              </div>
+            </button>
+          <% end %>
+        </div>
+
+        <%# Bottom Live Line-Blend Inspector + Stull Zone Legend %>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div class="lg:col-span-8 rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-stone-500">Live Tile Inspector</span>
+                <span
+                  data-simplex-map-target="optimalBadge"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[#B84A27] text-white"
+                >
+                  Optimal Tile
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span
+                  data-simplex-map-target="zone"
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border <%= optimal_palette[:badge_classes] %>"
+                >
+                  <%= optimal.stull_zone %>
+                </span>
+                <span
+                  data-simplex-map-target="fit"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#1F1B18] text-amber-200 tabular-nums"
+                >
+                  <%= format("%.1f%% Fit", optimal.fit_score) %>
+                </span>
+              </div>
+            </div>
+
+            <div
+              data-simplex-map-target="batch"
+              class="font-mono text-xs font-bold text-stone-900"
+            >
+              <%= line_blend_tile_batch_summary(optimal, optimal_tile_code) %>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E8DFD0] font-mono text-xs text-stone-800 tabular-nums">
+              <span data-simplex-map-target="umf"><%= simplex_candidate_umf_summary(optimal) %></span>
+              <span data-simplex-map-target="coe" class="font-semibold text-stone-900">
+                <%= simplex_candidate_coe_summary(optimal) %>
+              </span>
+            </div>
+          </div>
+
+          <div class="lg:col-span-4 rounded-xl border border-[#E8DFD0] bg-white p-3.5 space-y-1.5">
+            <div class="text-[10px] uppercase tracking-wider font-bold text-stone-600">
+              Stull Zone Counts (11 Tiles)
+            </div>
+            <% Chemistry::BlendRecipeBuilder::STULL_ZONES.each do |zone_name| %>
+              <% count = zone_counts[zone_name].to_i %>
+              <% next if count.zero? %>
+              <% pal = stull_zone_svg_palette(zone_name) %>
+              <div class="flex items-center justify-between text-xs">
+                <span class="inline-flex items-center gap-2 text-stone-800">
+                  <span
+                    class="w-2.5 h-2.5 rounded-full shrink-0 border"
+                    style="background-color: <%= pal[:fill] %>; border-color: <%= pal[:stroke] %>;"
+                  ></span>
+                  <span><%= pal[:label] %></span>
+                </span>
+                <span class="font-mono text-[11px] font-semibold text-stone-700 tabular-nums"><%= count %></span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</section>

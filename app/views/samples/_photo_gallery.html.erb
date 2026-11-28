@@ -5,8 +5,8 @@
     .with_attached_fired_tile_photo
     .order(created_at: :desc, id: :desc)
     .select do |obs|
-      (obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted?) ||
-        (obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted?)
+      (obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? && obs.raw_tile_photo.blob&.persisted?) ||
+        (obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? && obs.fired_tile_photo.blob&.persisted?)
     end
 %>
 
@@ -34,17 +34,20 @@
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           <% outcrop_photos.each do |photo| %>
-            <figure class="rounded-xl border border-[#D6C7B2] bg-white overflow-hidden shadow-xs group">
-              <%= link_to url_for(photo), target: "_blank", rel: "noopener", class: "block relative overflow-hidden bg-stone-100" do %>
-                <%= image_tag url_for(photo),
-                  alt: "#{sample.title} — #{photo.filename}",
-                  class: "w-full h-28 object-cover group-hover:scale-[1.02] transition-transform duration-150" %>
-              <% end %>
-              <figcaption class="px-2.5 py-1.5 flex items-center justify-between gap-1.5 text-[10px] text-stone-600 border-t border-[#E8DFD0]">
-                <span class="truncate font-medium" title="<%= photo.filename %>"><%= photo.filename %></span>
-                <span class="font-mono text-stone-400 shrink-0"><%= number_to_human_size(photo.byte_size) %></span>
-              </figcaption>
-            </figure>
+            <% if (thumb_url = stripped_photo_url(photo, resize_to_limit: [ 800, 800 ])) %>
+              <% full_url = stripped_photo_url(photo, resize_to_limit: [ 1600, 1600 ]) || thumb_url %>
+              <figure class="rounded-xl border border-[#D6C7B2] bg-white overflow-hidden shadow-xs group">
+                <%= link_to full_url, target: "_blank", rel: "noopener", class: "block relative overflow-hidden bg-stone-100" do %>
+                  <%= image_tag thumb_url,
+                    alt: "#{sample.title} — #{photo.filename}",
+                    class: "w-full h-28 object-cover group-hover:scale-[1.02] transition-transform duration-150" %>
+                <% end %>
+                <figcaption class="px-2.5 py-1.5 flex items-center justify-between gap-1.5 text-[10px] text-stone-600 border-t border-[#E8DFD0]">
+                  <span class="truncate font-medium" title="<%= photo.filename %>"><%= photo.filename %></span>
+                  <span class="font-mono text-stone-400 shrink-0"><%= number_to_human_size(photo.byte_size) %></span>
+                </figcaption>
+              </figure>
+            <% end %>
           <% end %>
         </div>
       </div>
@@ -84,9 +87,11 @@
                   <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
                     Raw / Unfired<%= " · #{obs.raw_color}" if obs.raw_color.present? %>
                   </div>
-                  <% if obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? %>
-                    <%= link_to url_for(obs.raw_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
-                      <%= image_tag url_for(obs.raw_tile_photo),
+                  <% raw_ready = obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? && obs.raw_tile_photo.blob&.persisted? %>
+                  <% if raw_ready && (thumb_url = stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 800, 800 ])) %>
+                    <% full_url = stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 1600, 1600 ]) || thumb_url %>
+                    <%= link_to full_url, target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag thumb_url,
                         alt: "Raw test tile for #{sample.title} (log ##{obs.id})",
                         class: "w-full h-28 object-cover" %>
                     <% end %>
@@ -101,9 +106,11 @@
                   <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
                     Fired Tile<%= " · Cone #{obs.fired_cone}" if obs.fired_cone.present? %>
                   </div>
-                  <% if obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? %>
-                    <%= link_to url_for(obs.fired_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
-                      <%= image_tag url_for(obs.fired_tile_photo),
+                  <% fired_ready = obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? && obs.fired_tile_photo.blob&.persisted? %>
+                  <% if fired_ready && (thumb_url = stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 800, 800 ])) %>
+                    <% full_url = stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 1600, 1600 ]) || thumb_url %>
+                    <%= link_to full_url, target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag thumb_url,
                         alt: "Fired test tile for #{sample.title} (log ##{obs.id})",
                         class: "w-full h-28 object-cover" %>
                     <% end %>

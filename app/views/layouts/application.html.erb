@@ -6,6 +6,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="application-name" content="DCI Tailor">
     <meta name="mobile-web-app-capable" content="yes">
+    <% if ENV["NOINDEX"] == "1" || ENV["SITE_LABEL"].to_s.casecmp?("staging") %>
+      <meta name="robots" content="noindex, nofollow">
+    <% end %>
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 
@@ -25,6 +28,11 @@
   </head>
 
   <body class="min-h-screen lg:h-screen lg:overflow-hidden bg-[#F5F0E6] text-stone-900 antialiased flex flex-col selection:bg-[#B84A27]/20 selection:text-stone-900">
+    <% if ENV["SITE_LABEL"].to_s.casecmp?("staging") %>
+      <div role="status" data-staging-banner class="bg-amber-200 border-b border-amber-400 text-amber-950 px-3 py-1 text-center text-xs font-semibold tracking-wide shrink-0">
+        Staging copy — test data only (dci-tailor-staging.glazecalcapp.com)
+      </div>
+    <% end %>
     <%= yield %>
   </body>
 </html>

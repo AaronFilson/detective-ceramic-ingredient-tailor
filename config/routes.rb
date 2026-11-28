@@ -9,9 +9,11 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
+  draw(:auth)
   draw(:exports)
   draw(:lab_assays)
   draw(:blends)
+  draw(:print_sheets)
   draw(:mineral_occurrences)
   draw(:regional_sync)
   draw(:setup)

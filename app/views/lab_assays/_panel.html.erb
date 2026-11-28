@@ -30,6 +30,11 @@
                 <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#1E4E79]/10 text-[#1E4E79] border border-[#1E4E79]/25">
                   Promoted to Spatial Atlas
                 </span>
+                <% if verified_lab_assay.reference_assay&.coordinate_privacy == "fuzzed_2km" %>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-900 border border-amber-300" data-atlas-fuzzed-badge>
+                    ~2 km Fuzzed GPS
+                  </span>
+                <% end %>
               <% end %>
             </div>
 
@@ -123,6 +128,15 @@
           </div>
         <% end %>
 
+        <% submitted = params[:lab_assay].respond_to?(:[]) ? params[:lab_assay] : {} %>
+        <% submitted_oxides = submitted[:oxides].respond_to?(:[]) ? submitted[:oxides] : {} %>
+        <% bool_type = ActiveModel::Type::Boolean.new %>
+        <% default_source_type = current_studio_setting.has_pxrf_workflow? ? "pxrf" : "verified_lab_xrf" %>
+        <% selected_source_type = submitted[:source_type].presence || default_source_type %>
+        <% selected_privacy = submitted[:coordinate_privacy].to_s == "fuzzed_2km" ? "fuzzed_2km" : "exact" %>
+        <% promote_checked = bool_type.cast(submitted[:promote_to_reference]) || false %>
+        <% privacy_confirmed_checked = bool_type.cast(submitted[:atlas_privacy_confirmed]) || false %>
+
         <%= form_with scope: :lab_assay,
           url: sample_lab_assays_path(sample),
           method: :post,
@@ -140,7 +154,7 @@
                     [ "Verified Lab ICP-MS", "verified_lab_icpms" ],
                     [ "Handheld pXRF CSV (Bruker / Olympus / Niton)", "pxrf" ]
                   ],
-                  current_studio_setting.has_pxrf_workflow? ? "pxrf" : "verified_lab_xrf"
+                  selected_source_type
                 ),
                 {},
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
@@ -149,6 +163,7 @@
             <div>
               <%= f.label :lab_name, "Laboratory / Instrument Name", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
               <%= f.text_field :lab_name,
+                value: submitted[:lab_name],
                 placeholder: "e.g., WSU GeoAnalytical, Bruker S1 TITAN",
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
             </div>
@@ -156,6 +171,7 @@
             <div>
               <%= f.label :lab_report_ref, "Lab Report / Sample Ref", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
               <%= f.text_field :lab_report_ref,
+                value: submitted[:lab_report_ref],
                 placeholder: "e.g., WSU-2026-0412 or PEG-01",
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 font-mono text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
             </div>
@@ -188,6 +204,7 @@
               <div>
                 <%= f.label :dry_weight_g, "Bone-Dry Weight (g)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :dry_weight_g,
+                  value: submitted[:dry_weight_g],
                   step: "0.01",
                   min: 0,
                   placeholder: "e.g., 100.00",
@@ -197,6 +214,7 @@
               <div>
                 <%= f.label :fired_weight_g, "Fired Weight (g)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :fired_weight_g,
+                  value: submitted[:fired_weight_g],
                   step: "0.01",
                   min: 0,
                   placeholder: "e.g., 91.50",
@@ -206,6 +224,7 @@
               <div>
                 <%= f.label :measured_loi_pct, "Or Direct Measured LOI (%)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :measured_loi_pct,
+                  value: submitted[:measured_loi_pct],
                   step: "0.01",
                   min: 0,
                   max: 99.9,
@@ -237,7 +256,7 @@
                     <%= oxide %>
                   </label>
                   <%= number_field_tag "lab_assay[oxides][#{oxide}]",
-                    nil,
+                    submitted_oxides[oxide],
                     id: "lab_assay_oxides_#{oxide.downcase}",
                     step: "0.01",
                     min: 0,
@@ -249,24 +268,79 @@
             </div>
           </div>
 
-          <label class="flex items-start gap-2.5 rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3.5 py-2.5 cursor-pointer">
-            <%= f.check_box :promote_to_reference,
-              { class: "mt-0.5 rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" },
-              "1",
-              "0" %>
-            <span class="space-y-0.5">
-              <span class="block text-xs font-semibold text-stone-900">
-                Contribute to Regional Spatial Atlas (2.5x weighted calibration prior)
+          <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-3" data-atlas-promotion-privacy>
+            <input type="hidden" name="lab_assay[privacy_prompt_shown]" value="1">
+
+            <label class="flex items-start gap-2.5 cursor-pointer">
+              <%= f.check_box :promote_to_reference,
+                { checked: promote_checked, class: "mt-0.5 rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" },
+                "1",
+                "0" %>
+              <span class="space-y-0.5">
+                <span class="block text-xs font-semibold text-stone-900">
+                  Contribute to Regional Spatial Atlas (2.5x weighted calibration prior)
+                </span>
+                <span class="block text-[11px] text-stone-500">
+                  <% if sample.latitude.present? && sample.longitude.present? %>
+                    Publishes this verified assay for (<%= format("%.4f, %.4f", sample.latitude.to_f, sample.longitude.to_f) %>) to improve future spatial baseline predictions.
+                  <% else %>
+                    Add GPS coordinates to this sample in Step 1 to publish into the Regional Spatial Atlas.
+                  <% end %>
+                </span>
               </span>
-              <span class="block text-[11px] text-stone-500">
-                <% if sample.latitude.present? && sample.longitude.present? %>
-                  Publishes this verified assay at (<%= format("%.4f, %.4f", sample.latitude.to_f, sample.longitude.to_f) %>) to improve future spatial baseline predictions.
-                <% else %>
-                  Add GPS coordinates to this sample in Step 1 to publish into the Regional Spatial Atlas.
-                <% end %>
-              </span>
-            </span>
-          </label>
+            </label>
+
+            <fieldset class="pl-6 space-y-2 border-t border-[#E8DFD0] pt-2.5">
+              <legend class="text-[11px] font-bold uppercase tracking-wider text-stone-700 mb-1">
+                Dig-Site Coordinate Privacy
+              </legend>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="flex items-start gap-2 rounded-lg border border-[#D6C7B2] bg-white px-3 py-2 cursor-pointer hover:border-[#1E4E79]">
+                  <input
+                    type="radio"
+                    name="lab_assay[coordinate_privacy]"
+                    value="exact"
+                    <%= "checked" if selected_privacy == "exact" %>
+                    class="mt-0.5 text-[#1E4E79] focus:ring-[#1E4E79]"
+                  >
+                  <span class="space-y-0.5">
+                    <span class="block text-xs font-semibold text-stone-900">Exact GPS Coordinates (Default)</span>
+                    <span class="block text-[11px] text-stone-500 leading-snug">
+                      Publishes exact sample coordinates for public geological roadcuts and outcrops.
+                    </span>
+                  </span>
+                </label>
+
+                <label class="flex items-start gap-2 rounded-lg border border-[#D6C7B2] bg-white px-3 py-2 cursor-pointer hover:border-[#B84A27]">
+                  <input
+                    type="radio"
+                    name="lab_assay[coordinate_privacy]"
+                    value="fuzzed_2km"
+                    <%= "checked" if selected_privacy == "fuzzed_2km" %>
+                    class="mt-0.5 text-[#B84A27] focus:ring-[#B84A27]"
+                  >
+                  <span class="space-y-0.5">
+                    <span class="block text-xs font-semibold text-stone-900">Fuzz Coordinates (~2 km privacy offset)</span>
+                    <span class="block text-[11px] text-stone-500 leading-snug">
+                      Deterministic ~2 km offset protecting private wild-clay sites while preserving regional formation chemistry.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              <label class="flex items-start gap-2 pt-1 cursor-pointer">
+                <%= check_box_tag "lab_assay[atlas_privacy_confirmed]",
+                  "1",
+                  privacy_confirmed_checked,
+                  id: "lab_assay_atlas_privacy_confirmed",
+                  class: "mt-0.5 rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" %>
+                <span class="text-[11px] font-medium text-stone-700">
+                  Confirm coordinate privacy selection above before publishing to the shared Atlas
+                </span>
+              </label>
+            </fieldset>
+          </div>
 
           <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
             <%= f.submit "Save Verified Lab Assay",

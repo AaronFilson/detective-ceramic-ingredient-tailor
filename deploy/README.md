@@ -1,0 +1,172 @@
+# Deploying DCI Tailor (`dci-tailor.glazecalcapp.com`)
+
+DCI Tailor runs alongside `glazecalc` on the single Graviton `t4g.small` (2 GB RAM + 2 GB swap) EC2 instance in `us-west-2` (`glazecalcapp.com`, AWS account `724654236968`), managed by **Kamal 2** over **AWS Systems Manager (SSM) Session Manager** with **zero open SSH ports**.
+
+## Host Port & Memory Map (`t4g.small` — 2,048 MB RAM)
+
+| Service | Host Loopback Port | Container Memory Cap | Notes |
+| --- | --- | --- | --- |
+| Host Nginx | `:80`, `:443` (public) | ~30 MB | Terminates Let's Encrypt TLS for all `*.glazecalcapp.com` virtual hosts |
+| `glazecalc` (prod) | `127.0.0.1:3000` | `512m` (~180 MB RSS) | Existing Node/Mongo production app |
+| `glazecalc-staging` | `127.0.0.1:3001` | `300m` (~120 MB RSS) | Existing Node staging app (`oom_score_adj: 500`) |
+| `kamal-proxy` (DCI Tailor) | `127.0.0.1:3002` (HTTP), `127.0.0.1:3443` (HTTPS) | ~30 MB | Routes both `dci-tailor.glazecalcapp.com` and `dci-tailor-staging.glazecalcapp.com` by `Host` header |
+| `dci-tailor-web` (prod) | internal `:8080` (Thruster, non-root `1000:1000`) | `512m` (~230 MB RSS) | Ruby 3.3 + `jemalloc` + Puma single-process (`WEB_CONCURRENCY=0`) + SolidQueue async in-process |
+| `dci-tailor-staging-web` | internal `:8080` (Thruster, non-root `1000:1000`) | `320m` (~185 MB RSS) | `oom-score-adj: 500`, `cpus: 0.5`, `RUBY_YJIT_ENABLE=0`, `RAILS_MAX_THREADS=2`, `JOB_THREADS=1` |
+| `dci-tailor-db` (PostGIS 16) | `127.0.0.1:5433` | `320m` (~140 MB RSS) | Superuser `postgres` for bootstrap/backups; least-privilege `dci_tailor` & `dci_tailor_staging` app roles (`shared_buffers=96MB`, `max_connections=50`) |
+
+---
+
+## Step 1: Resize `t4g.micro` -> `t4g.small` & Expand EBS to 30 GB (~60s Maintenance)
+
+Find the running `glazecalc` instance and root volume:
+
+```bash
+INSTANCE_ID=$(aws ec2 describe-instances --region us-west-2 \
+  --filters "Name=tag:app,Values=glazecalc" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" --output text)
+
+VOLUME_ID=$(aws ec2 describe-instances --region us-west-2 \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].BlockDeviceMappings[0].Ebs.VolumeId" --output text)
+```
+
+1. **Expand GP3 EBS volume online from 20 GB to 30 GB (zero downtime):**
+   ```bash
+   aws ec2 modify-volume --region us-west-2 --volume-id "$VOLUME_ID" --size 30
+   ```
+   Then inside an SSM session (`aws ssm start-session --region us-west-2 --target "$INSTANCE_ID"`):
+   ```bash
+   sudo growpart /dev/nvme0n1 1
+   sudo resize2fs /dev/nvme0n1p1
+   df -h /
+   ```
+2. **Upgrade instance type from `t4g.micro` (1 GB) to `t4g.small` (2 GB):**
+   ```bash
+   aws ec2 stop-instances --region us-west-2 --instance-ids "$INSTANCE_ID"
+   aws ec2 wait instance-stopped --region us-west-2 --instance-ids "$INSTANCE_ID"
+   aws ec2 modify-instance-attribute --region us-west-2 --instance-id "$INSTANCE_ID" \
+     --instance-type "{\"Value\": \"t4g.small\"}"
+   aws ec2 start-instances --region us-west-2 --instance-ids "$INSTANCE_ID"
+   aws ec2 wait instance-running --region us-west-2 --instance-ids "$INSTANCE_ID"
+   ```
+   *(Elastic IP remains attached automatically on stop/start; also update `instanceType` in `glazecalc/deploy/cdk` when convenient.)*
+
+---
+
+## Step 2: Deploy the AWS CDK Stack (`deploy/cdk`)
+
+Synthesize, test, and deploy `dci-tailor-infra`. This provisions:
+- Production encrypted S3 bucket `dci-tailor-storage-724654236968`, SSM parameter `/dci-tailor/storage-bucket`, and scoped IAM user `dci-tailor-storage` (with an explicit `Deny` on `pgdump/*` so web containers can never read or delete database backups).
+- Dedicated staging encrypted S3 bucket `dci-tailor-staging-storage-724654236968` (14-day whole-bucket lifecycle expiration), SSM parameter `/dci-tailor/staging/storage-bucket`, and isolated IAM user `dci-tailor-staging-storage`.
+- GitHub Actions OIDC role `dci-tailor-deploy` restricted strictly to the `production` and `staging` GitHub Environments and SSH-over-SSM sessions on `app=glazecalc`.
+
+```bash
+cd deploy/cdk
+npm install
+npm run typecheck
+npm test
+npx cdk diff
+npx cdk deploy
+```
+
+Also grant the EC2 instance role (`glazecalc-instance`) permission to read `/dci-tailor/storage-bucket` and upload `s3://dci-tailor-storage-724654236968/pgdump/*` (or configure `/root/.aws/credentials` for `backup-postgres.sh`), and create separate access keys for `dci-tailor-storage` (prod) and `dci-tailor-staging-storage` (staging) to store in SSM below.
+
+---
+
+## Step 3: Populate SSM Parameter Store Secrets
+
+Store production and staging secrets as `SecureString` parameters in `us-west-2`.
+
+> **Important (`SMTP_URL` encoding):** AWS SES SMTP passwords contain `/`, `+`, and `=` characters, which must be percent-encoded when embedded inside `SMTP_URL` so `URI.parse` parses the userinfo cleanly:
+> ```bash
+> ENCODED_SES_PASS=$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SES_PASS")
+> ```
+
+```bash
+# Production (/dci-tailor/prod/*)
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/secret-key-base --value "$(bin/rails secret)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/postgres-superuser-password --value "$(openssl rand -hex 24)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/postgres-password --value "$(openssl rand -hex 24)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/aws-access-key-id --value "<DCI_TAILOR_STORAGE_ACCESS_KEY_ID>"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/aws-secret-access-key --value "<DCI_TAILOR_STORAGE_SECRET_ACCESS_KEY>"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/smtp-url --value "smtp://${SES_USER}:${ENCODED_SES_PASS}@email-smtp.us-west-2.amazonaws.com:587"
+
+# Staging (/dci-tailor/staging/*)
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/staging/secret-key-base --value "$(bin/rails secret)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/staging/postgres-password --value "$(openssl rand -hex 24)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/staging/aws-access-key-id --value "<DCI_TAILOR_STAGING_STORAGE_ACCESS_KEY_ID>"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/staging/aws-secret-access-key --value "<DCI_TAILOR_STAGING_STORAGE_SECRET_ACCESS_KEY>"
+```
+
+*(Optional geological API keys: `/dci-tailor/prod/mindat-api-token` and `/dci-tailor/prod/georoc-api-key`.)*
+
+---
+
+## Step 4: DNS, Certbot TLS & Host Nginx Virtual Hosts
+
+1. Point Route 53 `A` / `AAAA` records for `dci-tailor.glazecalcapp.com` and `dci-tailor-staging.glazecalcapp.com` at the `glazecalc` Elastic IP.
+2. Issue Let's Encrypt certificates on the EC2 host using the existing `/var/www/certbot` webroot:
+   ```bash
+   sudo certbot certonly --webroot -w /var/www/certbot -d dci-tailor.glazecalcapp.com
+   sudo certbot certonly --webroot -w /var/www/certbot -d dci-tailor-staging.glazecalcapp.com
+   ```
+3. Install `deploy/nginx/dci-tailor.conf` and `deploy/nginx/dci-tailor-staging.conf`:
+   ```bash
+   sudo cp deploy/nginx/dci-tailor.conf /etc/nginx/sites-available/dci-tailor
+   sudo cp deploy/nginx/dci-tailor-staging.conf /etc/nginx/sites-available/dci-tailor-staging
+   sudo ln -sfn /etc/nginx/sites-available/dci-tailor /etc/nginx/sites-enabled/dci-tailor
+   sudo ln -sfn /etc/nginx/sites-available/dci-tailor-staging /etc/nginx/sites-enabled/dci-tailor-staging
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+---
+
+## Step 5: Configure SSH-over-SSM & Run Kamal Setup / Deploy
+
+1. Copy [`deploy/ssh-ssm-config.example`](./ssh-ssm-config.example) into `~/.ssh/config` with your live `InstanceId` (`Host glazecalc-ec2`), and ensure your SSH public key is in `/home/admin/.ssh/authorized_keys` (and `admin` is in the `docker` group: `sudo usermod -aG docker admin`).
+2. Validate Kamal configs locally:
+   ```bash
+   bin/kamal config
+   bin/kamal config -d staging
+   ```
+3. Bootstrap `dci-tailor-db`, `kamal-proxy` (`127.0.0.1:3002`), and production `dci-tailor`:
+   ```bash
+   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bin/kamal setup
+   ```
+   *(When `dci-tailor-db` initializes its empty volume, `deploy/postgres/init-databases.sh` automatically creates the non-superuser roles `dci_tailor` and `dci_tailor_staging` with their SSM passwords `APP_DB_PASSWORD` and `STAGING_DB_PASSWORD`, creates `dci_tailor_production` and `dci_tailor_staging`, and installs PostGIS in both — no manual `ALTER ROLE` is needed.)*
+4. Deploy staging (~200 MB RAM alongside production, sharing `kamal-proxy` and `dci-tailor-db` while using its dedicated `dci-tailor-staging-storage-724654236968` S3 bucket):
+   ```bash
+   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bin/kamal deploy -d staging
+   ```
+   To stop staging between testing rounds and reclaim ~185 MB RAM:
+   ```bash
+   AWS_REGION=us-west-2 bin/kamal app stop -d staging
+   ```
+
+---
+
+## Step 6: Nightly PostGIS Backups & Restore
+
+1. Copy `deploy/backup-postgres.sh` to `/usr/local/bin/dci-tailor-backup-postgres.sh` (`chmod 755`) and schedule via `/etc/cron.d/dci-tailor-backup` (e.g., `25 4 * * * root /usr/local/bin/dci-tailor-backup-postgres.sh >> /var/log/dci-tailor-backup.log 2>&1`). The script acquires `/var/lock/dci-tailor-backup.lock` via `flock -n` and verifies the archive table-of-contents with `pg_restore --list` before uploading to S3.
+2. **Test a backup manually:**
+   ```bash
+   sudo /usr/local/bin/dci-tailor-backup-postgres.sh
+   ```
+3. **Restore a custom-format dump (`pg_restore`) with `0600` file permissions:**
+   ```bash
+   (umask 077 && aws s3 cp s3://dci-tailor-storage-724654236968/pgdump/<dump-file>.dump /var/tmp/restore.dump)
+   docker exec -i dci-tailor-db sh -c \
+     'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore --clean --if-exists --no-owner --no-acl --role=dci_tailor -U "$POSTGRES_USER" -d dci_tailor_production' \
+     < /var/tmp/restore.dump
+   rm -f /var/tmp/restore.dump
+   ```

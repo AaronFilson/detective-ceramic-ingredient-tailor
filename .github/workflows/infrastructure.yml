@@ -1,0 +1,50 @@
+name: Infrastructure
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/infrastructure.yml'
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/infrastructure.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cdk:
+    name: CDK typecheck, tests & synth
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/cdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: deploy/cdk/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck TypeScript
+        run: npm run typecheck
+
+      - name: Run CDK unit tests
+        run: npm test
+
+      - name: Synthesize CloudFormation template
+        run: npx --no-install cdk synth --quiet
+
+      - name: Validate deploy shell script syntax
+        working-directory: .
+        run: bash -n deploy/backup-postgres.sh deploy/postgres/init-databases.sh

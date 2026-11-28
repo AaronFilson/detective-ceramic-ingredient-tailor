@@ -1,0 +1,19 @@
+# ~/.ssh/config snippet for deploying DCI Tailor with Kamal over AWS SSM Session Manager.
+# Port 22 remains completely closed on the `glazecalc-web` security group!
+#
+# Prerequisites on your laptop / CI runner:
+#   1. AWS CLI v2 (`brew install awscli`)
+#   2. AWS Session Manager Plugin (`brew install --cask session-manager-plugin`)
+#   3. Replace `i-0123456789abcdef0` below with the live EC2 Instance ID:
+#        aws ec2 describe-instances --region us-west-2 \
+#          --filters "Name=tag:app,Values=glazecalc" "Name=instance-state-name,Values=running" \
+#          --query "Reservations[0].Instances[0].InstanceId" --output text
+
+Host glazecalc-ec2
+  HostName i-0123456789abcdef0
+  User admin
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  ForwardAgent no
+  ServerAliveInterval 30
+  ProxyCommand sh -c "aws ssm start-session --region us-west-2 --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"

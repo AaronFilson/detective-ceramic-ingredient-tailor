@@ -220,8 +220,44 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
     assert_text "Whiting (CaCO3)"
     assert_text "Ferro Frit 3134"
     assert_text(/Optimal Recipe/i)
+    assert_selector "[data-simplex-heatmap] svg circle[data-simplex-point]", count: 231
+    assert_link "Print Kiln Bench Sheet"
     assert_text "COE"
     assert_text "B₂O₃"
+  end
+
+  test "guest potter creates sample, signs up to auto-claim studio sandbox, and renders printable QR bench sheet" do
+    StudioSetting.current.complete_onboarding!(studio_name: "Guest Clay Bench", default_fired_cone: "6")
+
+    visit new_sample_path
+    assert_selector "[data-auth-controls='guest']"
+    fill_in "Sample Title", with: "Vashon Creek Guest Clay"
+    select "Wild Clay", from: "Material Category"
+    click_button "Save & Run Baseline Assay"
+
+    assert_text "Sample \"Vashon Creek Guest Clay\" saved"
+    guest_sample = UserSample.order(:id).last
+    assert_nil guest_sample.user_id
+    assert guest_sample.guest_token.present?
+
+    visit new_registration_path
+    assert_text "1 guest sample ready to claim"
+    fill_in "Studio or Potter Name", with: "Vashon Island Pottery"
+    fill_in "Email Address", with: "potter@vashon.example"
+    fill_in "Password (min. 8 characters)", with: "stoneware-cone-10"
+    fill_in "Confirm Password", with: "stoneware-cone-10"
+    click_button "Create Studio Account"
+
+    assert_selector "[data-auth-controls='authenticated']"
+    assert_text "Vashon Island Pottery"
+    user = User.find_by!(email: "potter@vashon.example")
+    assert_equal user.id, guest_sample.reload.user_id
+    assert_nil guest_sample.guest_token
+
+    visit print_sample_sheet_path(guest_sample)
+    assert_text "Vashon Creek Guest Clay"
+    assert_text format("DCIT-S%04d", guest_sample.id)
+    assert_selector "svg"
   end
 
   private

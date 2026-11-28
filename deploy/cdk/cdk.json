@@ -1,0 +1,15 @@
+{
+  "app": "node bin/app.ts",
+  "notices": false,
+  "context": {
+    "cli-telemetry": false,
+    "@aws-cdk/aws-iam:minimizePolicies": false,
+    "@aws-cdk/aws-s3:publicAccessBlockedByDefault": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:enableAdditionalMetadataCollection": false,
+    "@aws-cdk/core:enablePartitionLiterals": true,
+    "@aws-cdk/core:newStyleStackSynthesis": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"]
+  }
+}

@@ -1,0 +1,37 @@
+# Kamal 2 staging destination (`bin/kamal deploy -d staging`) for dci-tailor-staging.glazecalcapp.com
+# Tuned to ~200 MB steady-state RSS alongside production on t4g.small:
+# - Shares kamal-proxy on 127.0.0.1:3002 via Host header routing
+# - Shares the existing dci-tailor-db PostGIS container using isolated database/role `dci_tailor_staging`
+# - oom-score-adj=500 ensures kernel OOM-killer evicts staging before production or PostGIS
+
+servers:
+  web:
+    hosts:
+      - <%= ENV.fetch("DCI_TAILOR_SERVER_HOST", "glazecalc-ec2") %>
+    options:
+      memory: 320m
+      oom-score-adj: 500
+      cpus: "0.5"
+
+proxy:
+  ssl: false
+  host: dci-tailor-staging.glazecalcapp.com
+  app_port: 8080
+  forward_headers: true
+
+logging:
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "3"
+
+env:
+  clear:
+    APP_HOST: dci-tailor-staging.glazecalcapp.com
+    POSTGRES_DB: dci_tailor_staging
+    POSTGRES_USER: dci_tailor_staging
+    RAILS_MAX_THREADS: "2"
+    JOB_THREADS: "1"
+    RUBY_YJIT_ENABLE: "0"
+    SITE_LABEL: staging
+    NOINDEX: "1"
