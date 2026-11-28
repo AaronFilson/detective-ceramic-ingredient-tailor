@@ -2,6 +2,7 @@
   <%= form_with model: [ sample, field_observation ],
     url: sample_field_observations_path(sample),
     method: :post,
+    multipart: true,
     data: { turbo: true },
     class: "space-y-5" do |f| %>
 
@@ -181,6 +182,23 @@
           <% end %>
         </div>
       </fieldset>
+
+      <%# Test-Tile Photo Captures (Raw vs. Fired) %>
+      <div class="pt-3 border-t border-[#E8DFD0] grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="rounded-xl border border-[#D6C7B2] bg-white p-2.5 space-y-1.5">
+          <%= f.label :raw_tile_photo, "Raw Test-Tile Photo", class: "block text-xs font-semibold text-stone-700" %>
+          <%= f.file_field :raw_tile_photo,
+            accept: "image/jpeg,image/png,image/webp",
+            class: "block w-full text-[11px] text-stone-600 file:mr-2.5 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-[#D6C7B2] file:text-[11px] file:font-semibold file:bg-[#FAF7F2] file:text-stone-800 hover:file:bg-[#E8DFD0] cursor-pointer" %>
+        </div>
+
+        <div class="rounded-xl border border-[#D6C7B2] bg-white p-2.5 space-y-1.5">
+          <%= f.label :fired_tile_photo, "Fired Test-Tile Photo", class: "block text-xs font-semibold text-stone-700" %>
+          <%= f.file_field :fired_tile_photo,
+            accept: "image/jpeg,image/png,image/webp",
+            class: "block w-full text-[11px] text-stone-600 file:mr-2.5 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-[#D6C7B2] file:text-[11px] file:font-semibold file:bg-[#FAF7F2] file:text-stone-800 hover:file:bg-[#E8DFD0] cursor-pointer" %>
+        </div>
+      </div>
 
       <%# Clay Body Physical Sheet (Glaze Vault Compatible) %>
       <div class="pt-3 border-t border-[#E8DFD0] space-y-2.5">

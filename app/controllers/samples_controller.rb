@@ -59,21 +59,38 @@ class SamplesController < ApplicationController
 
   def show
     @saved_samples = recent_samples
-    @sample = UserSample.includes(:geologic_unit, :soil_profile, :field_observations, :assay_results).find(params[:id])
+    @sample = UserSample
+      .with_attached_outcrop_photos
+      .includes(
+        :geologic_unit,
+        :soil_profile,
+        :assay_results,
+        field_observations: [
+          { raw_tile_photo_attachment: :blob },
+          { fired_tile_photo_attachment: :blob }
+        ]
+      )
+      .find(params[:id])
     load_workbench_context
     render :index
   end
 
   def create
-    @sample = UserSample.new(sample_params)
+    attrs = sample_params
+    new_photos = extract_uploaded_photos(attrs.delete(:outcrop_photos))
+    @sample = UserSample.new(attrs)
+    exif_pin_note = apply_exif_gps_if_present!(@sample, new_photos)
     assign_geologic_unit_if_needed!(@sample)
     assign_cached_soil_profile_if_needed!(@sample)
+    @sample.outcrop_photos.attach(new_photos) if new_photos.any?
 
     if @sample.save
       enqueue_soil_profile_lookup_if_needed(@sample)
       enqueue_mineral_occurrence_lookup_if_needed(@sample)
       self.class.estimate_sample(@sample)
-      redirect_to sample_path(@sample), notice: "Sample \"#{@sample.title}\" saved and baseline assay calculated."
+      notice = "Sample \"#{@sample.title}\" saved and baseline assay calculated."
+      notice = "#{notice} #{exif_pin_note}" if exif_pin_note.present?
+      redirect_to sample_path(@sample), notice: notice
     else
       @saved_samples = recent_samples
       load_workbench_context
@@ -82,22 +99,28 @@ class SamplesController < ApplicationController
   end
 
   def update
-    @sample = UserSample.find(params[:id])
+    @sample = UserSample.with_attached_outcrop_photos.find(params[:id])
     prev_coords = [ @sample.latitude, @sample.longitude ]
     prev_unit_id = @sample.geologic_unit_id
-    @sample.assign_attributes(sample_params)
+    attrs = sample_params
+    new_photos = extract_uploaded_photos(attrs.delete(:outcrop_photos))
+    @sample.assign_attributes(attrs)
+    exif_pin_note = apply_exif_gps_if_present!(@sample, new_photos)
 
     coords_changed = prev_coords != [ @sample.latitude, @sample.longitude ]
-    submitted_unit_id = sample_params[:geologic_unit_id].presence&.to_i
+    submitted_unit_id = attrs[:geologic_unit_id].presence&.to_i
     explicit_new_unit = submitted_unit_id.present? && submitted_unit_id != prev_unit_id
     assign_geologic_unit_if_needed!(@sample, force: coords_changed && !explicit_new_unit)
     assign_cached_soil_profile_if_needed!(@sample, force: coords_changed)
+    @sample.outcrop_photos.attach(new_photos) if new_photos.any?
 
     if @sample.save
       enqueue_soil_profile_lookup_if_needed(@sample)
       enqueue_mineral_occurrence_lookup_if_needed(@sample)
       @assay_result = self.class.estimate_sample(@sample, field_observation: @sample.latest_field_observation)
-      redirect_to sample_path(@sample), notice: "Sample updated and chemical assay recalculated."
+      notice = "Sample updated and chemical assay recalculated."
+      notice = "#{notice} #{exif_pin_note}" if exif_pin_note.present?
+      redirect_to sample_path(@sample), notice: notice
     else
       @saved_samples = recent_samples
       load_workbench_context
@@ -166,7 +189,11 @@ class SamplesController < ApplicationController
   private
 
   def recent_samples
-    UserSample.includes(:geologic_unit, :soil_profile, :assay_results).order(updated_at: :desc, id: :desc).limit(30)
+    UserSample
+      .with_attached_outcrop_photos
+      .includes(:geologic_unit, :soil_profile, :assay_results)
+      .order(updated_at: :desc, id: :desc)
+      .limit(30)
   end
 
   def build_default_sample(lat: nil, lng: nil)
@@ -327,6 +354,29 @@ class SamplesController < ApplicationController
     nil
   end
 
+  def extract_uploaded_photos(raw_photos)
+    Array(raw_photos).reject(&:blank?)
+  end
+
+  def apply_exif_gps_if_present!(sample, uploaded_photos)
+    return nil if uploaded_photos.empty?
+
+    should_auto_pin = params[:auto_pin_from_photo].to_s == "1" ||
+      (sample.latitude.nil? && sample.longitude.nil?)
+    return nil unless should_auto_pin
+
+    coords = uploaded_photos.lazy.filter_map { |photo| Media::ExifGpsExtractor.extract(photo) }.first
+    return nil unless coords
+
+    sample.latitude = coords[:latitude]
+    sample.longitude = coords[:longitude]
+    format(
+      "Pinned coordinates (%.4f, %.4f) automatically from outcrop photo EXIF GPS.",
+      coords[:latitude],
+      coords[:longitude]
+    )
+  end
+
   def sample_params
     params.require(:user_sample).permit(
       :title,
@@ -334,7 +384,8 @@ class SamplesController < ApplicationController
       :latitude,
       :longitude,
       :geologic_unit_id,
-      :notes
+      :notes,
+      outcrop_photos: []
     )
   end
 end

@@ -438,4 +438,17 @@
       </div>
     </div>
   <% end %>
+
+  <% if lookup_context.exists?("setup_wizard/regional_sync_card", [], true) %>
+    <div
+      data-setup-wizard-target="stepPanel"
+      data-step="4"
+      class="<%= initial_step == 4 ? '' : 'hidden' %> px-5 sm:px-6 py-4 bg-[#F5F0E6]/80 border-t border-[#E8DFD0]"
+    >
+      <%= render "setup_wizard/regional_sync_card",
+        studio_setting: setting,
+        lat: setting.default_lat,
+        lng: setting.default_lng %>
+    </div>
+  <% end %>
 </div>

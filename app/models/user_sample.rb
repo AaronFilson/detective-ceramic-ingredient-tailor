@@ -3,12 +3,16 @@
 class UserSample < ApplicationRecord
   include Geolocatable
 
+  ALLOWED_PHOTO_CONTENT_TYPES = %w[image/jpeg image/png image/webp].freeze
+  MAX_PHOTO_BYTE_SIZE = 10.megabytes
+
   belongs_to :user, optional: true
   belongs_to :geologic_unit, optional: true
   belongs_to :soil_profile, optional: true
 
   has_many :field_observations, dependent: :destroy
   has_many :assay_results, dependent: :destroy
+  has_many_attached :outcrop_photos
 
   enum :material_category, {
     wild_clay: 0,
@@ -19,6 +23,7 @@ class UserSample < ApplicationRecord
 
   validates :title, presence: true
   validates :material_category, presence: true
+  validate :validate_outcrop_photos
 
   def latest_assay_result
     assay_results.order(created_at: :desc, id: :desc).first
@@ -34,5 +39,24 @@ class UserSample < ApplicationRecord
 
   def latest_field_observation
     field_observations.order(created_at: :desc, id: :desc).first
+  end
+
+  private
+
+  def validate_outcrop_photos
+    return unless outcrop_photos.attached?
+
+    outcrop_photos.each do |photo|
+      blob = photo.blob
+      next unless blob
+
+      unless ALLOWED_PHOTO_CONTENT_TYPES.include?(blob.content_type)
+        errors.add(:outcrop_photos, "must be a JPEG, PNG, or WebP image (got #{blob.content_type || 'unknown'})")
+      end
+
+      if blob.byte_size.to_i > MAX_PHOTO_BYTE_SIZE
+        errors.add(:outcrop_photos, "must each be 10 MB or smaller")
+      end
+    end
   end
 end

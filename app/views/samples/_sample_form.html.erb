@@ -1,6 +1,7 @@
 <%= form_with model: sample,
   url: sample.persisted? ? sample_path(sample) : samples_path,
   method: sample.persisted? ? :patch : :post,
+  multipart: true,
   class: "space-y-4" do |f| %>
 
   <% if sample.errors.any? %>
@@ -72,6 +73,25 @@
       rows: 2,
       placeholder: "Outcrop depth, creek bank seam, moisture, visible mica/sand inclusions…",
       class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3.5 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/40 focus:border-[#B84A27]" %>
+  </div>
+
+  <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-2.5">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <%= f.label :outcrop_photos, "Outcrop / Dig-Site Photos", class: "block text-xs font-semibold uppercase tracking-wider text-stone-700" %>
+      <span class="text-[11px] text-stone-500">JPEG, PNG, or WebP · max 10 MB each</span>
+    </div>
+
+    <%= f.file_field :outcrop_photos,
+      multiple: true,
+      include_hidden: false,
+      accept: "image/jpeg,image/png,image/webp",
+      class: "block w-full text-xs text-stone-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-[#D6C7B2] file:text-xs file:font-semibold file:bg-white file:text-stone-800 hover:file:bg-stone-100 cursor-pointer" %>
+
+    <label class="inline-flex items-center gap-2 text-xs text-stone-700 cursor-pointer select-none">
+      <%= check_box_tag :auto_pin_from_photo, "1", true,
+        class: "rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" %>
+      <span>Auto-drop map pin from photo EXIF GPS (when present)</span>
+    </label>
   </div>
 
   <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
