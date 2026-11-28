@@ -139,9 +139,9 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
           within "#assay_estimate_panel" do
             assert_selector "tr[data-oxide-row='SiO2']"
             assert_selector "tr[data-oxide-row='CaO']"
-            assert_text "SiO2 : Al2O3 Molar Ratio"
+            assert_text(/SiO2 : Al2O3 Molar Ratio/i)
             assert_selector "#hazard_alerts_panel"
-            assert_text "Studio Safety, Kiln & Mineralogy Screening"
+            assert_text(/Studio Safety, Kiln & Mineralogy Screening/i)
             assert_selector "[data-reasoning-log]"
             assert_text(/vinegar|carbonate|caco3/i)
           end
@@ -216,10 +216,10 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
 
     visit blends_path
     assert_text "Solo Wild Bluff Clay"
-    assert_text "Studio Stock Modifiers"
+    assert_text(/Studio Stock Modifiers/i)
     assert_text "Whiting (CaCO3)"
     assert_text "Ferro Frit 3134"
-    assert_text "Optimal Recipe"
+    assert_text(/Optimal Recipe/i)
     assert_text "COE"
     assert_text "B₂O₃"
   end

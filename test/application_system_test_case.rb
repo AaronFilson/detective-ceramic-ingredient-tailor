@@ -1,6 +1,30 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "capybara"
+require "capybara/selenium/driver"
+require "capybara/selenium/driver_specializations/chrome_driver"
+
+# Chrome 134+ rejects `origin: "*"` in CDP `Storage.clearDataForOrigin` during
+# Capybara 3.40's `ChromeDriver#reset!`. Clear DOM storage before navigating to
+# `about:blank` and use `Network.clearBrowserCookies` when `origin == "*"`.
+module CapybaraChromeModernResetPatch
+  private
+
+  def uniform_storage_clear?
+    false
+  end
+
+  def execute_cdp(cmd, params = {})
+    if cmd == "Storage.clearDataForOrigin" && params[:origin] == "*"
+      return super("Network.clearBrowserCookies")
+    end
+
+    super
+  end
+end
+
+Capybara::Selenium::Driver::ChromeDriver.prepend(CapybaraChromeModernResetPatch)
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   CHROME_BINARIES = %w[google-chrome chrome chromium chromium-browser].freeze
