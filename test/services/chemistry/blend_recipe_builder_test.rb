@@ -142,6 +142,87 @@ module Chemistry
       assert_equal "Matte", c6_matte.optimal.stull_zone
       assert_equal "Gloss", c10_gloss.optimal.stull_zone
       assert_equal "Matte", c10_matte.optimal.stull_zone
+
+      # Local-only Cone 6 blends flag missing boron while preserving clean scoring
+      assert c6_gloss.b2o3_missing_cone6?
+      assert c6_matte.b2o3_missing_cone6?
+      assert_not c10_gloss.b2o3_missing_cone6?
+      assert_not c6_gloss.optimal.band_checks.key?(:b2o3)
+    end
+
+    test "reformulates 1 wild clay with Whiting and Ferro Frit 3134 into in-band Cone 6 Gloss with B2O3 and balanced COE" do
+      whiting = StockMaterialsCatalog.find("whiting")
+      frit_3134 = StockMaterialsCatalog.find("ferro_frit_3134")
+
+      result = BlendRecipeBuilder.call(
+        samples: [ @wild_clay, whiting, frit_3134 ],
+        target_cone: "6",
+        surface: "gloss"
+      )
+
+      assert result.triaxial?
+      assert_not result.b2o3_missing_cone6?
+
+      optimal = result.optimal
+      assert_equal "Gloss", optimal.stull_zone
+      assert optimal.band_checks[:sio2], "Expected SiO2 #{optimal.sio2} in 3.0..4.2"
+      assert optimal.band_checks[:al2o3], "Expected Al2O3 #{optimal.al2o3} in 0.32..0.48"
+      assert optimal.band_checks[:si_al], "Expected Si:Al #{optimal.si_al_ratio} in 6.5..9.5"
+      assert optimal.band_checks[:flux], "Expected R2O #{optimal.r2o_total} in 0.20..0.45"
+      assert optimal.band_checks[:b2o3], "Expected B2O3 #{optimal.b2o3} in 0.12..0.32"
+      assert optimal.all_in_band?
+      assert_operator optimal.fit_score, :>, 85.0
+      assert_operator optimal.minor_oxides["B2O3"], :>, 2.0
+      assert_in_delta 100.0, optimal.oxides.values.sum + optimal.minor_oxides.values.sum, 0.05
+
+      assert_not_nil optimal.coe_report
+      assert_equal :balanced_fit, optimal.crazing_risk
+      assert_includes 5.5..7.4, optimal.coe
+    end
+
+    test "blends minor oxides from StockMaterials and UserSample assays including Li2O low-expansion flux" do
+      spodumene = StockMaterialsCatalog.find("spodumene")
+      neph_sy = StockMaterialsCatalog.find("nepheline_syenite")
+      dolomite = StockMaterialsCatalog.find("dolomite")
+
+      li_blend = BlendRecipeBuilder.call(
+        samples: [ @wild_clay, spodumene, dolomite ],
+        target_cone: "10",
+        surface: "matte"
+      )
+      alkali_blend = BlendRecipeBuilder.call(
+        samples: [ @wild_clay, neph_sy, dolomite ],
+        target_cone: "10",
+        surface: "matte"
+      )
+
+      # Pick comparable 50/30/20 candidate to verify direct Li2O vs Na2O/K2O thermal expansion shift
+      li_50_30_20 = li_blend.candidates.find { |c| c.weights.map { |w| w[:percentage] } == [ 50, 30, 20 ] }
+      na_50_30_20 = alkali_blend.candidates.find { |c| c.weights.map { |w| w[:percentage] } == [ 50, 30, 20 ] }
+
+      assert_operator li_50_30_20.minor_oxides["Li2O"], :>, 1.5
+      assert_operator li_50_30_20.li2o, :>, 0.10
+      assert_operator li_50_30_20.coe, :<, na_50_30_20.coe
+
+      # Verify minor_oxides stored on a UserSample's AssayResult also blend cleanly
+      lithium_pegmatite = UserSample.create!(title: "Black Hills Pegmatite", material_category: :crushed_rock)
+      lithium_pegmatite.assay_results.create!(
+        source_type: :verified_lab_icpms,
+        oxides: {
+          "SiO2" => 66.0, "Al2O3" => 22.0, "CaO" => 1.0,
+          "Na2O" => 2.5, "K2O" => 3.5, "LOI" => 1.0
+        },
+        minor_oxides: { "Li2O" => 4.0 }
+      )
+
+      peg_result = BlendRecipeBuilder.call(
+        samples: [ lithium_pegmatite, StockMaterialsCatalog.find("whiting") ],
+        target_cone: "10",
+        surface: "gloss"
+      )
+      half_mix = peg_result.candidates.find { |c| c.weights.map { |w| w[:percentage] } == [ 50, 50 ] }
+      assert_in_delta 2.0, half_mix.minor_oxides["Li2O"], 0.1
+      assert_operator half_mix.li2o, :>, 0.05
     end
 
     test "classifies all five Stull zones accurately" do
@@ -210,6 +291,7 @@ module Chemistry
       assert_equal "mid", recipe["firing"]
       assert_equal 100, recipe["materials"].sum { |line| line["amount"] }
       assert_includes recipe["notes"], "Cone 6 Gloss"
+      assert_includes recipe["notes"], "Predicted COE:"
 
       # Cone 10 maps to firing: "high"
       c10_result = BlendRecipeBuilder.call(
@@ -247,15 +329,52 @@ module Chemistry
       assert_equal 100, recipe["lines"].sum { |line| line["amount"] }
       assert recipe["lines"].all? { |line| line["material"].present? && line["amount"].positive? }
       assert_includes recipe["notes"], "Cone 10 Gloss"
+      assert_includes recipe["notes"], "Predicted COE:"
+    end
+
+    test "exports StockMaterial items alongside UserSample cleanly in Glazecalc and Glaze Vault bundles" do
+      whiting = StockMaterialsCatalog.find("whiting")
+      frit_3134 = StockMaterialsCatalog.find("ferro_frit_3134")
+
+      result = BlendRecipeBuilder.call(
+        samples: [ @wild_clay, whiting, frit_3134 ],
+        target_cone: "6",
+        surface: "gloss"
+      )
+
+      gc_export = BlendRecipeBuilder.to_glazecalc_export(result, recipe_title: "Puget Cone 6 Clear")
+      gc_materials = gc_export.dig("records", "materials")
+      assert_equal [ "Puget Glacial Wild Clay", "Whiting (CaCO3)", "Ferro Frit 3134" ], gc_materials.map { |m| m["name"] }
+      gc_materials.each do |mat|
+        total = mat["fields"].sum { |f| f["amount"].to_f } + mat["loi"].to_f
+        assert_in_delta 100.0, total, 0.1
+      end
+      frit_mat = gc_materials.find { |m| m["name"] == "Ferro Frit 3134" }
+      assert_includes frit_mat["fields"].map { |f| f["name"] }, "B2O3"
+      assert_equal "studio_stock_catalog", frit_mat.dig("source", "kind")
+      assert_includes gc_export.dig("records", "recipes", 0, "notes"), "B2O3"
+      assert_includes gc_export.dig("records", "recipes", 0, "notes"), "Predicted COE:"
+
+      gv_export = BlendRecipeBuilder.to_glaze_vault_export(result, recipe_title: "Puget Cone 6 Clear")
+      assert_equal 3, gv_export["materials"].size
+      gv_frit = gv_export["materials"].find { |m| m["name"] == "Ferro Frit 3134" }
+      assert_includes gv_frit["oxides"].map { |o| o["oxide"] }, "B2O3"
+      assert_includes Exporters::GlazeVaultSerializer::MATERIAL_CLASSES, gv_frit["class"]
+      assert_equal %w[whiting ferro_frit_3134], gv_export.dig("provenance", "stock_keys")
+      assert_in_delta result.optimal.coe, gv_export.dig("provenance", "coe"), 0.01
+      assert_includes gv_export.dig("recipes", 0, "notes"), "B2O3"
+      assert_includes gv_export.dig("recipes", 0, "notes"), "Predicted COE:"
     end
 
     test "raises ArgumentError for invalid sample counts, duplicates, cone, surface, or missing assays" do
       fourth = UserSample.create!(title: "Fourth Sample", material_category: :other)
       fourth.assay_results.create!(oxides: { "SiO2" => 95.0, "Al2O3" => 4.0, "LOI" => 1.0 })
+      whiting = StockMaterialsCatalog.find("whiting")
 
       assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ @wild_clay ]) }
       assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ @wild_clay, @wood_ash, @granite, fourth ]) }
       assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ @wild_clay, @wild_clay ]) }
+      assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ whiting, whiting ]) }
       assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ @wild_clay, @wood_ash ], target_cone: "04") }
       assert_raises(ArgumentError) { BlendRecipeBuilder.call(samples: [ @wild_clay, @wood_ash ], surface: "crystalline") }
 

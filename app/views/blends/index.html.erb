@@ -13,7 +13,7 @@
             DCI Tailor
           </div>
           <div class="text-[11px] text-stone-400 hidden sm:block">
-            Local Line-Blend &amp; Triaxial Glaze Recipe Builder
+            Local Line-Blend, Stock Reformulator &amp; Triaxial Glaze Builder
           </div>
         </div>
       <% end %>
@@ -44,30 +44,37 @@
       <%# Hero Banner %>
       <section class="rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm px-5 py-4 flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-1 max-w-2xl">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <span class="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#1E4E79]/12 text-[#1E4E79] border border-[#1E4E79]/20">
-              UMF Optimizer
+              UMF &amp; COE Optimizer
             </span>
             <span class="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#B84A27]/12 text-[#963B1D] border border-[#B84A27]/20">
               Line &amp; Triaxial Blends
+            </span>
+            <span class="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-violet-100 text-violet-900 border border-violet-300">
+              18 Studio Stock Modifiers
             </span>
           </div>
           <h1 class="text-lg sm:text-xl font-bold text-stone-900 tracking-tight">
             Local Material Glaze Recipe Builder
           </h1>
           <p class="text-xs sm:text-sm text-stone-600 leading-relaxed">
-            Combine 2 assayed local materials (wild clay, wood ash, crushed rock) for an 11-step line blend or 3 materials for a 5% triaxial simplex grid. DCI Tailor scores every blend against Cone 6 &amp; Cone 10 Gloss/Matte Seger UMF target bands and exports complete Materials + Recipe bundles.
+            Reformulate a single wild clay with commercial fluxes and frits, or blend 2–3 assayed local materials and studio staples across 11-step line blends or 231-point triaxial grids with full minor-oxide (B₂O₃, Li₂O, SrO, ZnO) UMF scoring and Appen/English-Turner thermal expansion (COE) fit prediction.
           </p>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 text-center font-mono text-xs shrink-0">
-          <div class="rounded-xl bg-[#FAF7F2] border border-[#E8DFD0] px-3.5 py-2">
+        <div class="grid grid-cols-3 gap-2 text-center font-mono text-xs shrink-0">
+          <div class="rounded-xl bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-2">
             <div class="text-lg font-bold text-stone-900 tabular-nums"><%= @available_samples.size %></div>
-            <div class="text-[10px] uppercase tracking-wider text-stone-500">Assayed Materials</div>
+            <div class="text-[10px] uppercase tracking-wider text-stone-500">Local Assays</div>
           </div>
-          <div class="rounded-xl bg-[#FAF7F2] border border-[#E8DFD0] px-3.5 py-2">
+          <div class="rounded-xl bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-2">
+            <div class="text-lg font-bold text-[#B84A27] tabular-nums"><%= Chemistry::StockMaterialsCatalog.all.size %></div>
+            <div class="text-[10px] uppercase tracking-wider text-stone-500">Stock Staples</div>
+          </div>
+          <div class="rounded-xl bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-2">
             <div class="text-lg font-bold text-[#1E4E79] tabular-nums">11 / 231</div>
-            <div class="text-[10px] uppercase tracking-wider text-stone-500">Line / Triaxial Pts</div>
+            <div class="text-[10px] uppercase tracking-wider text-stone-500">Line / Triaxial</div>
           </div>
         </div>
       </section>
@@ -77,25 +84,28 @@
         <section class="lg:col-span-4 rounded-2xl bg-[#FCFBF8] border border-[#D6C7B2] shadow-sm overflow-hidden">
           <div class="px-5 py-3.5 bg-[#FAF7F2] border-b border-[#E8DFD0] flex items-center justify-between gap-2">
             <h2 class="text-sm font-bold text-stone-900 tracking-tight">
-              1. Pick 2 or 3 Local Materials
+              1. Pick 2 or 3 Materials (Local + Stock)
             </h2>
             <span class="font-mono text-[11px] text-stone-500">Dry Wt %</span>
           </div>
 
           <div class="p-5">
-            <% if @available_samples.any? %>
-              <%= form_with url: blends_path, method: :post, data: { turbo_frame: "blend_results" }, class: "space-y-5" do |form| %>
-                <%# Sample Checkboxes %>
-                <fieldset class="space-y-2">
-                  <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mb-2">
-                    Saved Samples With Chemical Assays
-                  </legend>
-                  <div class="space-y-2 max-h-[340px] overflow-y-auto pr-1 studio-scroll">
+            <%= form_with url: blends_path, method: :post, data: { turbo_frame: "blend_results" }, class: "space-y-5" do |form| %>
+              <%# Section 1A: Assayed Local Materials %>
+              <fieldset class="space-y-2">
+                <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-700 mb-2 flex items-center justify-between w-full">
+                  <span>1A. Your Assayed Local Materials</span>
+                  <span class="font-mono text-[10px] font-normal text-stone-500"><%= @available_samples.size %> saved</span>
+                </legend>
+
+                <% if @available_samples.any? %>
+                  <div class="space-y-2 max-h-[240px] overflow-y-auto pr-1 studio-scroll">
                     <% @available_samples.each do |sample| %>
                       <% assay = sample.latest_assay_result %>
                       <% oxides = assay&.oxides || {} %>
+                      <% minors = assay.respond_to?(:minor_oxides) && assay.minor_oxides.is_a?(Hash) ? assay.minor_oxides : {} %>
                       <% checked = @selected_sample_ids.include?(sample.id) %>
-                      <label class="flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-colors <%= checked ? 'border-[#1E4E79] bg-[#1E4E79]/5' : 'border-[#E8DFD0] bg-white hover:border-[#D6C7B2]' %>">
+                      <label class="flex items-start gap-2.5 rounded-xl border p-2.5 cursor-pointer transition-colors <%= checked ? 'border-[#1E4E79] bg-[#1E4E79]/5' : 'border-[#E8DFD0] bg-white hover:border-[#D6C7B2]' %>">
                         <input
                           type="checkbox"
                           name="sample_ids[]"
@@ -110,87 +120,148 @@
                               <%= material_category_label(sample.material_category) %>
                             </span>
                           </div>
-                          <div class="font-mono text-[10px] text-stone-500 flex flex-wrap gap-x-2.5 gap-y-0.5 tabular-nums">
+                          <div class="font-mono text-[10px] text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 tabular-nums">
                             <span>SiO₂ <%= format("%.1f", oxides["SiO2"].to_f) %>%</span>
                             <span>Al₂O₃ <%= format("%.1f", oxides["Al2O3"].to_f) %>%</span>
                             <span>CaO <%= format("%.1f", oxides["CaO"].to_f) %>%</span>
                             <span>Fe₂O₃ <%= format("%.1f", oxides["Fe2O3"].to_f) %>%</span>
+                            <% if minors["B2O3"].to_f.positive? %>
+                              <span class="text-violet-800 font-semibold">B₂O₃ <%= format("%.1f", minors["B2O3"].to_f) %>%</span>
+                            <% end %>
+                            <% if minors["Li2O"].to_f.positive? %>
+                              <span class="text-teal-800 font-semibold">Li₂O <%= format("%.1f", minors["Li2O"].to_f) %>%</span>
+                            <% end %>
                           </div>
                         </div>
                       </label>
                     <% end %>
                   </div>
-                  <p class="text-[11px] text-stone-500">
-                    Check <strong>2 materials</strong> for a 10% Line Blend or <strong>3 materials</strong> for a 5% Triaxial Simplex.
-                  </p>
-                </fieldset>
-
-                <%# Target Cone Selector %>
-                <fieldset class="space-y-2">
-                  <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
-                    2. Target Firing Cone
-                  </legend>
-                  <div class="grid grid-cols-2 gap-2">
-                    <% [ [ "6", "Cone 6", "Mid-Fire · 1222 °C" ], [ "10", "Cone 10", "High-Fire · 1305 °C" ] ].each do |cone_val, title, subtitle| %>
-                      <label class="relative flex flex-col rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5 cursor-pointer hover:border-[#1E4E79] has-[:checked]:border-[#1E4E79] has-[:checked]:bg-[#1E4E79]/10 transition-colors">
-                        <input
-                          type="radio"
-                          name="target_cone"
-                          value="<%= cone_val %>"
-                          <%= "checked" if @target_cone == cone_val %>
-                          class="sr-only"
-                        >
-                        <span class="text-xs font-bold text-stone-900"><%= title %></span>
-                        <span class="text-[10px] font-mono text-stone-500"><%= subtitle %></span>
-                      </label>
-                    <% end %>
+                <% else %>
+                  <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-3.5 text-center space-y-2">
+                    <p class="text-xs font-semibold text-stone-800">No assayed local samples saved yet</p>
+                    <p class="text-[11px] text-stone-600">
+                      Save a wild clay in the Sample Workbench to reformulate it, or pick 2–3 Studio Stock Modifiers below.
+                    </p>
+                    <%= link_to "+ Create First Sample",
+                      new_sample_path,
+                      class: "inline-flex items-center px-3 py-1.5 rounded-lg bg-[#B84A27] hover:bg-[#963B1D] text-white text-[11px] font-semibold transition-colors" %>
                   </div>
-                </fieldset>
+                <% end %>
+              </fieldset>
 
-                <%# Target Surface Selector %>
-                <fieldset class="space-y-2">
-                  <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
-                    3. Target Glaze Surface
-                  </legend>
-                  <div class="grid grid-cols-2 gap-2">
-                    <% [ [ "gloss", "Gloss", "Si:Al 6.5–10.0" ], [ "matte", "Matte", "Si:Al 4.5–6.8" ] ].each do |surface_val, title, subtitle| %>
-                      <label class="relative flex flex-col rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5 cursor-pointer hover:border-[#B84A27] has-[:checked]:border-[#B84A27] has-[:checked]:bg-[#B84A27]/10 transition-colors">
-                        <input
-                          type="radio"
-                          name="surface"
-                          value="<%= surface_val %>"
-                          <%= "checked" if @surface == surface_val %>
-                          class="sr-only"
-                        >
-                        <span class="text-xs font-bold text-stone-900"><%= title %></span>
-                        <span class="text-[10px] font-mono text-stone-500"><%= subtitle %></span>
-                      </label>
-                    <% end %>
-                  </div>
-                </fieldset>
+              <%# Section 1B: Commercial Studio Stock Modifiers %>
+              <fieldset class="space-y-2.5 pt-3 border-t border-[#E8DFD0]">
+                <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-700 flex items-center justify-between w-full">
+                  <span>1B. Studio Stock Modifiers</span>
+                  <span class="font-mono text-[10px] font-normal text-stone-500">18 staples</span>
+                </legend>
+                <p class="text-[11px] text-stone-500 leading-snug">
+                  Mix 1 wild clay + 1–2 studio staples (e.g. Whiting + Ferro Frit 3134) for instant Cone 6/10 glaze reformulation.
+                </p>
 
-                <%# Optional Custom Recipe Name %>
-                <div>
-                  <%= form.label :recipe_title, "Recipe Title (Optional)", class: "block text-[11px] font-semibold uppercase tracking-wider text-stone-600 mb-1.5" %>
-                  <%= form.text_field :recipe_title,
-                    value: @recipe_title,
-                    placeholder: "e.g. Puget Wild Clay Ash Celadon",
-                    class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
+                <div class="space-y-3 max-h-[320px] overflow-y-auto pr-1 studio-scroll">
+                  <% @stock_groups.each do |role, materials| %>
+                    <div class="space-y-1.5">
+                      <div class="sticky top-0 z-10 bg-[#FCFBF8]/95 backdrop-blur-xs py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-stone-500 border-b border-[#E8DFD0]">
+                        <%= Chemistry::StockMaterialsCatalog.role_label(role) %> (<%= materials.size %>)
+                      </div>
+
+                      <% materials.each do |stock| %>
+                        <% checked = @selected_stock_keys.include?(stock.key) %>
+                        <label class="flex items-start gap-2 rounded-xl border p-2.5 cursor-pointer transition-colors <%= checked ? 'border-[#B84A27] bg-[#B84A27]/6' : 'border-[#E8DFD0] bg-white hover:border-[#D6C7B2]' %>">
+                          <input
+                            type="checkbox"
+                            name="stock_keys[]"
+                            value="<%= stock.key %>"
+                            <%= "checked" if checked %>
+                            class="mt-0.5 rounded border-stone-400 text-[#B84A27] focus:ring-[#B84A27]"
+                          >
+                          <div class="min-w-0 flex-1 space-y-1">
+                            <div class="flex items-center justify-between gap-1.5 flex-wrap">
+                              <span class="text-xs font-bold text-stone-900"><%= stock.title %></span>
+                              <div class="flex items-center gap-1 flex-wrap">
+                                <% stock.quick_tags.each do |tag| %>
+                                  <span class="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border <%= Chemistry::StockMaterialsCatalog.tag_classes(tag[:tone]) %>">
+                                    <%= tag[:label] %>
+                                  </span>
+                                <% end %>
+                              </div>
+                            </div>
+                            <div class="font-mono text-[10px] text-stone-500 flex flex-wrap gap-x-2 gap-y-0.5 tabular-nums">
+                              <% stock.summary_oxides(3).each do |oxide, pct| %>
+                                <span><%= oxide %> <%= format("%.1f", pct) %>%</span>
+                              <% end %>
+                              <% if stock.oxides["LOI"].to_f >= 1.0 %>
+                                <span>LOI <%= format("%.1f", stock.oxides["LOI"].to_f) %>%</span>
+                              <% end %>
+                            </div>
+                          </div>
+                        </label>
+                      <% end %>
+                    </div>
+                  <% end %>
                 </div>
 
-                <%= form.submit "Calculate Optimal Glaze Blend",
-                  class: "w-full py-2.5 px-4 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer" %>
-              <% end %>
-            <% else %>
-              <div class="rounded-xl border border-dashed border-[#D6C7B2] bg-[#FAF7F2] p-5 text-center space-y-3">
-                <p class="text-sm font-semibold text-stone-800">No assayed samples saved yet</p>
-                <p class="text-xs text-stone-600">
-                  Create and save at least 2 local material samples in DCI Tailor so they have chemical oxide assays ready to blend.
+                <p class="text-[11px] text-stone-500">
+                  Check <strong>2 total materials</strong> for a 10% Line Blend or <strong>3 total materials</strong> for a 5% Triaxial Simplex.
                 </p>
-                <%= link_to "+ Create First Sample",
-                  new_sample_path,
-                  class: "inline-flex items-center px-3.5 py-2 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs font-semibold transition-colors" %>
+              </fieldset>
+
+              <%# Target Cone Selector %>
+              <fieldset class="space-y-2 pt-2 border-t border-[#E8DFD0]">
+                <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
+                  2. Target Firing Cone
+                </legend>
+                <div class="grid grid-cols-2 gap-2">
+                  <% [ [ "6", "Cone 6", "Mid-Fire · 1222 °C" ], [ "10", "Cone 10", "High-Fire · 1305 °C" ] ].each do |cone_val, title, subtitle| %>
+                    <label class="relative flex flex-col rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5 cursor-pointer hover:border-[#1E4E79] has-[:checked]:border-[#1E4E79] has-[:checked]:bg-[#1E4E79]/10 transition-colors">
+                      <input
+                        type="radio"
+                        name="target_cone"
+                        value="<%= cone_val %>"
+                        <%= "checked" if @target_cone == cone_val %>
+                        class="sr-only"
+                      >
+                      <span class="text-xs font-bold text-stone-900"><%= title %></span>
+                      <span class="text-[10px] font-mono text-stone-500"><%= subtitle %></span>
+                    </label>
+                  <% end %>
+                </div>
+              </fieldset>
+
+              <%# Target Surface Selector %>
+              <fieldset class="space-y-2">
+                <legend class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
+                  3. Target Glaze Surface
+                </legend>
+                <div class="grid grid-cols-2 gap-2">
+                  <% [ [ "gloss", "Gloss", "Si:Al 6.5–10.0" ], [ "matte", "Matte", "Si:Al 4.5–6.8" ] ].each do |surface_val, title, subtitle| %>
+                    <label class="relative flex flex-col rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] px-3 py-2.5 cursor-pointer hover:border-[#B84A27] has-[:checked]:border-[#B84A27] has-[:checked]:bg-[#B84A27]/10 transition-colors">
+                      <input
+                        type="radio"
+                        name="surface"
+                        value="<%= surface_val %>"
+                        <%= "checked" if @surface == surface_val %>
+                        class="sr-only"
+                      >
+                      <span class="text-xs font-bold text-stone-900"><%= title %></span>
+                      <span class="text-[10px] font-mono text-stone-500"><%= subtitle %></span>
+                    </label>
+                  <% end %>
+                </div>
+              </fieldset>
+
+              <%# Optional Custom Recipe Name %>
+              <div>
+                <%= form.label :recipe_title, "Recipe Title (Optional)", class: "block text-[11px] font-semibold uppercase tracking-wider text-stone-600 mb-1.5" %>
+                <%= form.text_field :recipe_title,
+                  value: @recipe_title,
+                  placeholder: "e.g. Puget Wild Clay Cone 6 Frit Gloss",
+                  class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
               </div>
+
+              <%= form.submit "Calculate Optimal Glaze Blend",
+                class: "w-full py-2.5 px-4 rounded-xl bg-[#1E4E79] hover:bg-[#163B5C] text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer" %>
             <% end %>
           </div>
         </section>
@@ -201,7 +272,8 @@
             blend_result: @blend_result,
             error_message: @error_message,
             recipe_title: @recipe_title,
-            available_samples: @available_samples %>
+            available_samples: @available_samples,
+            auto_reformulated: @auto_reformulated %>
         </section>
       </div>
     </div>
