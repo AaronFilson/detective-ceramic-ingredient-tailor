@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_000018) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
@@ -41,6 +41,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "api_tokens", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "name", null: false
+    t.string "token_prefix", null: false
+    t.string "token_digest", null: false
+    t.datetime "last_used_at"
+    t.datetime "revoked_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["token_digest"], name: "index_api_tokens_on_token_digest", unique: true
+    t.index ["user_id"], name: "index_api_tokens_on_user_id"
   end
 
   create_table "assay_results", force: :cascade do |t|
@@ -125,11 +138,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.jsonb "trace_elements_ppm", default: {}, null: false
     t.jsonb "xrd_mineralogy", default: {}, null: false
     t.string "sample_media"
+    t.bigint "promoted_by_user_id"
+    t.string "coordinate_privacy", default: "exact", null: false
     t.index ["external_id"], name: "index_reference_assays_on_external_id"
     t.index ["location"], name: "index_reference_assays_on_location", using: :gist
+    t.index ["promoted_by_user_id"], name: "index_reference_assays_on_promoted_by_user_id"
     t.index ["rock_type"], name: "index_reference_assays_on_rock_type"
     t.index ["sample_media"], name: "index_reference_assays_on_sample_media"
     t.index ["source", "external_id"], name: "index_reference_assays_on_source_and_external_id", unique: true
+  end
+
+  create_table "sessions", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "ip_address"
+    t.string "user_agent"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
   create_table "soil_profiles", force: :cascade do |t|
@@ -152,6 +177,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.index ["location"], name: "index_soil_profiles_on_location", using: :gist
     t.index ["mukey"], name: "index_soil_profiles_on_mukey", unique: true
     t.index ["source"], name: "index_soil_profiles_on_source"
+  end
+
+  create_table "solid_cache_entries", force: :cascade do |t|
+    t.binary "key", null: false
+    t.binary "value", null: false
+    t.datetime "created_at", null: false
+    t.bigint "key_hash", null: false
+    t.integer "byte_size", null: false
+    t.index ["byte_size"], name: "index_solid_cache_entries_on_byte_size"
+    t.index ["key_hash", "byte_size"], name: "index_solid_cache_entries_on_key_hash_and_byte_size"
+    t.index ["key_hash"], name: "index_solid_cache_entries_on_key_hash", unique: true
   end
 
   create_table "solid_queue_batch_executions", force: :cascade do |t|
@@ -327,6 +363,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.string "regional_sync_status", default: "idle", null: false
     t.datetime "regional_synced_at"
     t.string "regional_sync_summary"
+    t.string "guest_token"
+    t.index ["guest_token"], name: "index_studio_settings_on_guest_token", unique: true
     t.index ["user_id"], name: "index_studio_settings_on_user_id"
   end
 
@@ -340,7 +378,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "soil_profile_id"
+    t.string "guest_token"
     t.index ["geologic_unit_id"], name: "index_user_samples_on_geologic_unit_id"
+    t.index ["guest_token"], name: "index_user_samples_on_guest_token"
     t.index ["location"], name: "index_user_samples_on_location", using: :gist
     t.index ["soil_profile_id"], name: "index_user_samples_on_soil_profile_id"
     t.index ["user_id"], name: "index_user_samples_on_user_id"
@@ -351,14 +391,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
     t.string "name"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "password_digest"
+    t.integer "role", default: 0, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "api_tokens", "users"
   add_foreign_key "assay_results", "reference_assays"
   add_foreign_key "assay_results", "user_samples"
   add_foreign_key "field_observations", "user_samples"
+  add_foreign_key "reference_assays", "users", column: "promoted_by_user_id", on_delete: :nullify
+  add_foreign_key "sessions", "users"
   add_foreign_key "solid_queue_batch_executions", "solid_queue_batches", column: "batch_id", on_delete: :cascade
   add_foreign_key "solid_queue_batch_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
