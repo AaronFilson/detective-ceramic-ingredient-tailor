@@ -120,8 +120,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libgeos-dev libproj-dev libvips
 
       - name: Set up Chrome and ChromeDriver
+        id: setup-chrome
         uses: browser-actions/setup-chrome@v1
         with:
+          chrome-version: stable
           install-chromedriver: true
 
       - name: Checkout code
@@ -136,6 +138,7 @@ jobs:
       - name: Run System Tests
         env:
           RAILS_ENV: test
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
           POSTGRES_HOST: localhost
           POSTGRES_PORT: "5432"
           POSTGRES_USER: postgres

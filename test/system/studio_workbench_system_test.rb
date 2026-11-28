@@ -132,6 +132,9 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
             click_button "Apply Observations & Recalculate Assay"
           end
 
+          # Wait for Turbo Stream replacement of #assay_estimate_panel before scoping within it
+          assert_selector "#assay_estimate_panel", text: /vinegar|carbonate|caco3/i
+
           # Verify Step 3 live oxide table, UMF, hazard screening & reasoning trail
           within "#assay_estimate_panel" do
             assert_selector "tr[data-oxide-row='SiO2']"
