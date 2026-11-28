@@ -12,7 +12,10 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   end
 
   if chrome_available?
-    driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 900 ]
+    driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 900 ] do |driver_option|
+      driver_option.add_argument("--no-sandbox")
+      driver_option.add_argument("--disable-dev-shm-usage")
+    end
   else
     driven_by :rack_test
   end

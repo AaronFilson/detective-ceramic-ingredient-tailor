@@ -180,6 +180,31 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
     assert_button "Calculate Optimal Glaze Blend"
   end
 
+  test "single wild clay auto-reformulates on /blends with Studio Stock Modifiers, B2O3, and COE badge, and Step 1 renders regional sync card" do
+    StudioSetting.current.complete_onboarding!(studio_name: "Puget Sound Clayworks", default_fired_cone: "6")
+
+    clay = UserSample.create!(
+      title: "Solo Wild Bluff Clay",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443
+    )
+    SamplesController.estimate_sample(clay)
+
+    visit sample_path(clay)
+    assert_selector "#regional_sync_card"
+    assert_button "Hydrate Regional Atlas"
+
+    visit blends_path
+    assert_text "Solo Wild Bluff Clay"
+    assert_text "Studio Stock Modifiers"
+    assert_text "Whiting (CaCO3)"
+    assert_text "Ferro Frit 3134"
+    assert_text "Optimal Recipe"
+    assert_text "COE"
+    assert_text "B₂O₃"
+  end
+
   private
 
   def stub_external_geochemical_apis
