@@ -67,11 +67,17 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test "GET /blends lists assayed samples, excludes unassayed samples, and previews default blend" do
+  test "GET /blends lists assayed samples, excludes unassayed samples, shows stock modifiers, and previews default blend" do
     get blends_path
 
     assert_response :success
     assert_includes response.body, "Local Material Glaze Recipe Builder"
+    assert_includes response.body, "1A. Your Assayed Local Materials"
+    assert_includes response.body, "1B. Studio Stock Modifiers"
+    assert_includes response.body, "Fluxes &amp; Frits"
+    assert_includes response.body, "Stabilizers, Glass Formers &amp; Colorants"
+    assert_includes response.body, "Ferro Frit 3134"
+    assert_includes response.body, "Spodumene"
     assert_includes response.body, "Snohomish River Clay"
     assert_includes response.body, "Bigleaf Maple Wood Ash"
     assert_includes response.body, "Index Quarry Granite"
@@ -79,6 +85,32 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, 'id="blend_results"'
     assert_includes response.body, "Glazecalc Recipe + Materials Bundle"
     assert_includes response.body, "Glaze Vault Recipe + Materials Archive"
+  end
+
+  test "GET /blends auto-reformulates a single wild clay with Cone 6 or Cone 10 studio stock modifiers" do
+    @ash.destroy!
+    @granite.destroy!
+
+    # Default Cone 6 auto-pairs with Whiting + Ferro Frit 3134
+    get blends_path, params: { target_cone: "6", surface: "gloss" }
+
+    assert_response :success
+    assert_includes response.body, "1-Wild-Clay Auto-Reformulator"
+    assert_includes response.body, "Snohomish River Clay"
+    assert_includes response.body, "Whiting (CaCO3)"
+    assert_includes response.body, "Ferro Frit 3134"
+    assert_includes response.body, "231 Simplex Points"
+    assert_includes response.body, "B₂O₃ (mol)"
+    assert_includes response.body, "stock_keys%5B%5D=whiting"
+    assert_includes response.body, "stock_keys%5B%5D=ferro_frit_3134"
+
+    # Cone 10 auto-pairs with Whiting + EPK Kaolin
+    get blends_path, params: { target_cone: "10", surface: "gloss" }
+
+    assert_response :success
+    assert_includes response.body, "1-Wild-Clay Auto-Reformulator"
+    assert_includes response.body, "EPK Kaolin"
+    assert_includes response.body, "stock_keys%5B%5D=epk_kaolin"
   end
 
   test "POST /blends calculates 2-material line blend via Turbo Stream" do
@@ -99,8 +131,46 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Cone 10 Matte"
     assert_includes response.body, "0% / 100%"
     assert_includes response.body, "100% / 0%"
+    assert_includes response.body, "×10⁻⁷"
     assert_includes response.body, "/blends/export_glazecalc"
     assert_includes response.body, "/blends/export_glaze_vault"
+  end
+
+  test "POST /blends mixes local wild clay with Studio Stock Modifiers and renders B2O3, COE, and export links" do
+    post blends_path,
+      params: {
+        sample_ids: [ @clay.id ],
+        stock_keys: [ "whiting", "ferro_frit_3134" ],
+        target_cone: "6",
+        surface: "gloss",
+        recipe_title: "Snohomish Cone 6 Gloss"
+      },
+      headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+    assert_response :success
+    assert_includes response.body, "Snohomish Cone 6 Gloss"
+    assert_includes response.body, "Triaxial Blend"
+    assert_includes response.body, "B₂O₃"
+    assert_includes response.body, "Balanced Fit"
+    assert_includes response.body, "Studio Stock"
+    assert_includes response.body, "sample_ids%5B%5D=#{@clay.id}"
+    assert_includes response.body, "stock_keys%5B%5D=whiting"
+    assert_includes response.body, "stock_keys%5B%5D=ferro_frit_3134"
+    assert_not_includes response.body, "Cone 6 Boron Tip"
+  end
+
+  test "POST /blends displays Li2O when blending with Spodumene and Cone 6 boron tip when B2O3 is absent" do
+    post blends_path,
+      params: {
+        sample_ids: [ @clay.id ],
+        stock_keys: [ "spodumene" ],
+        target_cone: "6",
+        surface: "gloss"
+      }
+
+    assert_response :success
+    assert_includes response.body, "Li₂O:"
+    assert_includes response.body, "Cone 6 Boron Tip"
   end
 
   test "POST /blends calculates 3-material triaxial blend and renders top candidates" do
@@ -118,9 +188,10 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "231 Simplex Points"
     assert_includes response.body, "Cone 6 Gloss"
     assert_includes response.body, "Top 12 Triaxial Candidates"
+    assert_includes response.body, "Cone 6 Boron Tip"
   end
 
-  test "POST /blends returns 422 error alert when fewer than 2 samples are selected" do
+  test "POST /blends returns 422 error alert when fewer than 2 or more than 3 total materials are selected" do
     post blends_path,
       params: {
         sample_ids: [ @clay.id ],
@@ -132,6 +203,17 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_includes response.body, "Unable to Calculate Blend"
     assert_includes response.body, "Select 2 materials"
+
+    post blends_path,
+      params: {
+        sample_ids: [ @clay.id, @ash.id ],
+        stock_keys: [ "whiting", "ferro_frit_3134" ],
+        target_cone: "6",
+        surface: "gloss"
+      }
+
+    assert_response :unprocessable_content
+    assert_includes response.body, "Unable to Calculate Blend"
   end
 
   test "GET /blends/export_glazecalc downloads valid glazecalc-export v1 bundle" do
@@ -188,6 +270,49 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "10", recipe["cone"]
     assert_equal "matte", recipe["surface"]
     assert_equal 100, recipe["lines"].sum { |l| l["amount"] }
+  end
+
+  test "export endpoints serialize mixed local samples and stock modifiers cleanly" do
+    get export_glazecalc_blends_path,
+      params: {
+        sample_ids: [ @clay.id ],
+        stock_keys: [ "whiting", "ferro_frit_3134" ],
+        target_cone: "6",
+        surface: "gloss",
+        recipe_title: "Snohomish Frit 3134 Gloss"
+      }
+
+    assert_response :success
+    gc_body = JSON.parse(response.body)
+    assert_equal [ "Snohomish River Clay", "Whiting (CaCO3)", "Ferro Frit 3134" ],
+      gc_body.dig("records", "materials").map { |m| m["name"] }
+    assert_includes gc_body.dig("records", "recipes", 0, "notes"), "B2O3"
+    assert_includes gc_body.dig("records", "recipes", 0, "notes"), "Predicted COE:"
+
+    get export_glaze_vault_blends_path,
+      params: {
+        sample_ids: [ @clay.id ],
+        stock_keys: [ "whiting", "ferro_frit_3134" ],
+        target_cone: "6",
+        surface: "gloss",
+        recipe_title: "Snohomish Frit 3134 Gloss"
+      }
+
+    assert_response :success
+    gv_body = JSON.parse(response.body)
+    assert_equal 3, gv_body["materials"].size
+    assert_equal %w[whiting ferro_frit_3134], gv_body.dig("provenance", "stock_keys")
+    assert_includes gv_body.dig("recipes", 0, "notes"), "Predicted COE:"
+  end
+
+  test "export endpoints fall back to StudioSetting cone and surface defaults when omitted" do
+    StudioSetting.current.update!(default_fired_cone: "10", default_blend_surface: "matte")
+
+    get export_glazecalc_blends_path, params: { sample_ids: [ @clay.id, @ash.id ] }
+    assert_response :success
+    gc_body = JSON.parse(response.body)
+    assert_equal "high", gc_body.dig("records", "recipes", 0, "firing")
+    assert_includes gc_body.dig("records", "recipes", 0, "title"), "Cone 10 Matte"
   end
 
   test "export endpoints return 422 JSON when sample selection is invalid" do

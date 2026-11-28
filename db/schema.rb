@@ -10,10 +10,38 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_27_000015) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000017) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "postgis"
+
+  create_table "active_storage_attachments", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "record_type", null: false
+    t.bigint "record_id", null: false
+    t.bigint "blob_id", null: false
+    t.datetime "created_at", null: false
+    t.index ["blob_id"], name: "index_active_storage_attachments_on_blob_id"
+    t.index ["record_type", "record_id", "name", "blob_id"], name: "index_active_storage_attachments_uniqueness", unique: true
+  end
+
+  create_table "active_storage_blobs", force: :cascade do |t|
+    t.string "key", null: false
+    t.string "filename", null: false
+    t.string "content_type"
+    t.text "metadata"
+    t.string "service_name", null: false
+    t.bigint "byte_size", null: false
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.index ["key"], name: "index_active_storage_blobs_on_key", unique: true
+  end
+
+  create_table "active_storage_variant_records", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.string "variation_digest", null: false
+    t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
 
   create_table "assay_results", force: :cascade do |t|
     t.bigint "user_sample_id", null: false
@@ -295,6 +323,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000015) do
     t.datetime "onboarding_skipped_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.string "regional_sync_status", default: "idle", null: false
+    t.datetime "regional_synced_at"
+    t.string "regional_sync_summary"
+    t.index ["user_id"], name: "index_studio_settings_on_user_id"
   end
 
   create_table "user_samples", force: :cascade do |t|
@@ -321,6 +354,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000015) do
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
+  add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "assay_results", "reference_assays"
   add_foreign_key "assay_results", "user_samples"
   add_foreign_key "field_observations", "user_samples"
@@ -332,6 +367,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000015) do
   add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "studio_settings", "users"
   add_foreign_key "user_samples", "geologic_units"
   add_foreign_key "user_samples", "soil_profiles"
   add_foreign_key "user_samples", "users"

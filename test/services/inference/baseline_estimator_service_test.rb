@@ -575,16 +575,212 @@ module Inference
       assert_not rock_result.reasoning_log.any? { |line| line.include?("USDA SSURGO soil horizon prior") }
     end
 
+    test "returns empty minor_oxides and trace_elements_ppm for category defaults and assays without trace data" do
+      ocean_sample = UserSample.create!(
+        title: "Ocean Default Clay",
+        material_category: :wild_clay,
+        latitude: 0.0,
+        longitude: 0.0
+      )
+      default_result = Inference::BaselineEstimatorService.call(ocean_sample)
+      assert_equal({}, default_result.minor_oxides)
+      assert_equal({}, default_result.trace_elements_ppm)
+      assert_not default_result.reasoning_log.any? { |line| line.include?("Propagated") }
+
+      5.times do |idx|
+        create_assay!(
+          external_id: "NO-TRACE-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT + (idx * 0.004),
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 59.0)
+        )
+      end
+
+      local_sample = UserSample.create!(
+        title: "No Trace Clay",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+      local_result = Inference::BaselineEstimatorService.call(local_sample)
+      assert_equal({}, local_result.minor_oxides)
+      assert_equal({}, local_result.trace_elements_ppm)
+      assert_not local_result.reasoning_log.any? { |line| line.include?("Propagated") }
+    end
+
+    test "propagates weighted-median minor oxides (>= 0.01 wt%) and conservative P75 trace elements with reasoning log" do
+      # 5 equal-distance assays: 3 report BaO/SrO and 5 report As/Rb/S
+      as_values = [ 10.0, 20.0, 40.0, 60.0, 100.0 ] # P75 = 60.0
+      bao_values = [ 1.8, 2.4, 3.0, nil, nil ]      # 3/5 = 60% >= 20%, median = 2.4
+      sro_values = [ 0.12, 0.18, 0.24, nil, nil ]   # median = 0.18
+      tiny_values = [ 0.004, 0.006, 0.008, nil, nil ] # < 0.01 wt% -> excluded
+
+      5.times do |idx|
+        minors = {}
+        minors["BaO"] = bao_values[idx] if bao_values[idx]
+        minors["SrO"] = sro_values[idx] if sro_values[idx]
+        minors["CuO"] = tiny_values[idx] if tiny_values[idx]
+
+        create_assay!(
+          source: "usgs_ds801",
+          external_id: "TRACE-DS801-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT,
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 59.0),
+          minor_oxides: minors,
+          trace_elements_ppm: {
+            "As" => as_values[idx],
+            "Rb" => 100.0 + (idx * 50.0), # [100, 150, 200, 250, 300] -> P75 = 250.0
+            "S" => 1000.0 + (idx * 500.0) # [1000, 1500, 2000, 2500, 3000] -> P75 = 2500.0
+          }
+        )
+      end
+
+      sample = UserSample.create!(
+        title: "Tacoma Trace Clay",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+
+      result = Inference::BaselineEstimatorService.call(sample)
+
+      assert_equal :local_15km, result.strategy
+      assert_in_delta 2.4, result.minor_oxides["BaO"], 0.0001
+      assert_in_delta 0.18, result.minor_oxides["SrO"], 0.0001
+      assert_nil result.minor_oxides["CuO"]
+
+      assert_in_delta 60.0, result.trace_elements_ppm["As"], 0.1
+      assert_in_delta 250.0, result.trace_elements_ppm["Rb"], 0.1
+      assert_in_delta 2500.0, result.trace_elements_ppm["S"], 0.1
+
+      assert result.reasoning_log.any? { |line|
+        line.include?("Propagated regional minor oxides") &&
+          line.include?("BaO") &&
+          line.include?("SrO") &&
+          line.include?("P75 trace elements") &&
+          line.include?("As") &&
+          line.include?("5/5 matched assays")
+      }
+    end
+
+    test "scales sparse (< 20%) unverified minor oxides conservatively while keeping authoritative DS-801/verified minor oxides unscaled" do
+      # 10 equal-distance glacial_clay assays:
+      # - 1 unverified usgs_ngdb assay reports ZnO = 0.40 (10% coverage < 20% -> scaled by 0.5 to 0.20)
+      # - 1 authoritative usgs_ds801 assay reports Li2O = 1.25 (10% coverage but DS-801 -> full 1.25 retained)
+      8.times do |idx|
+        create_assay!(
+          source: "usgs_ngdb",
+          external_id: "SPARSE-PLAIN-#{idx}",
+          rock_type: "glacial_clay",
+          lat: TACOMA_LAT,
+          lng: TACOMA_LNG,
+          oxides: standard_clay_oxides(sio2: 59.0)
+        )
+      end
+
+      create_assay!(
+        source: "usgs_ngdb",
+        external_id: "SPARSE-ZNO",
+        rock_type: "glacial_clay",
+        lat: TACOMA_LAT,
+        lng: TACOMA_LNG,
+        oxides: standard_clay_oxides(sio2: 59.0),
+        minor_oxides: { "ZnO" => 0.40 }
+      )
+
+      create_assay!(
+        source: "usgs_ds801",
+        external_id: "SPARSE-DS801-LI",
+        rock_type: "glacial_clay",
+        lat: TACOMA_LAT,
+        lng: TACOMA_LNG,
+        oxides: standard_clay_oxides(sio2: 59.0),
+        minor_oxides: { "Li2O" => 1.25 }
+      )
+
+      sample = UserSample.create!(
+        title: "Sparse Minor Scaling Clay",
+        material_category: :wild_clay,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG
+      )
+
+      result = Inference::BaselineEstimatorService.call(sample)
+
+      assert_equal 10, result.sample_count
+      assert_in_delta 0.20, result.minor_oxides["ZnO"], 0.0001
+      assert_in_delta 1.25, result.minor_oxides["Li2O"], 0.0001
+    end
+
+    test "spatial minor/trace propagation triggers HazardScreenerService alerts for As, BaO, S, and LCT K/Rb" do
+      # Create 5 nearby GEOROC/DS-801 pegmatite assays carrying elevated K2O, Rb (K/Rb < 160), As, BaO, and S
+      5.times do |idx|
+        create_assay!(
+          source: idx.even? ? "georoc" : "usgs_ds801",
+          external_id: "PEG-HAZ-#{idx}",
+          rock_type: "pegmatite",
+          lat: TACOMA_LAT + (idx * 0.002),
+          lng: TACOMA_LNG,
+          oxides: {
+            "SiO2" => 68.0, "Al2O3" => 17.0, "Fe2O3" => 0.8, "CaO" => 0.8,
+            "MgO" => 0.3, "Na2O" => 4.0, "K2O" => 7.0, "TiO2" => 0.1,
+            "P2O5" => 0.3, "MnO" => 0.1, "LOI" => 1.6
+          },
+          minor_oxides: { "BaO" => 2.6, "Li2O" => 1.8 },
+          trace_elements_ppm: { "As" => 75.0, "Rb" => 520.0, "S" => 2400.0 }
+        )
+      end
+
+      unit = GeologicUnit.create!(
+        macrostrat_id: 51099,
+        name: "Cascade Pegmatite Belt",
+        lithology: { "raw" => "pegmatite" }
+      )
+      sample = UserSample.create!(
+        title: "Wild Pegmatite Outcrop",
+        material_category: :crushed_rock,
+        latitude: TACOMA_LAT,
+        longitude: TACOMA_LNG,
+        geologic_unit: unit
+      )
+
+      assay = Inference::SampleEstimatorService.call(sample)
+      assert_in_delta 2.6, assay.minor_oxides["BaO"], 0.01
+      assert_in_delta 1.8, assay.minor_oxides["Li2O"], 0.01
+      assert_in_delta 75.0, assay.trace_elements_ppm["As"], 0.5
+      assert_in_delta 520.0, assay.trace_elements_ppm["Rb"], 1.0
+      assert_operator assay.umf_formula.dig("fluxes", "Li2O").to_f, :>, 0.1
+
+      screening = Chemistry::HazardScreenerService.call(
+        assay_result: assay,
+        user_sample: sample,
+        nearby_minerals: [],
+        nearby_xrd: {}
+      )
+      codes = screening.alerts.map { |a| a[:code] }
+      assert_includes codes, "toxic_arsenic"
+      assert_includes codes, "barium_toxicity"
+      assert_includes codes, "sulfide_degassing"
+      assert_includes codes, "lct_pegmatite_pathfinder"
+      assert_operator screening.k_rb_ratio, :<, 160.0
+      assert screening.food_safe_caution?
+    end
+
     private
 
-    def create_assay!(external_id:, rock_type:, lat:, lng:, oxides:, source: "test_seed")
+    def create_assay!(external_id:, rock_type:, lat:, lng:, oxides:, source: "test_seed", minor_oxides: {}, trace_elements_ppm: {})
       ReferenceAssay.create!(
         source: source,
         external_id: external_id,
         rock_type: rock_type,
         latitude: lat,
         longitude: lng,
-        oxides: oxides
+        oxides: oxides,
+        minor_oxides: minor_oxides,
+        trace_elements_ppm: trace_elements_ppm
       )
     end
 

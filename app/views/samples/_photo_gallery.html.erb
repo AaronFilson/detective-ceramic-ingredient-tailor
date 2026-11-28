@@ -1,0 +1,124 @@
+<%
+  outcrop_photos = sample.outcrop_photos.select { |photo| photo.persisted? && photo.blob&.persisted? }
+  tile_observations = sample.field_observations
+    .with_attached_raw_tile_photo
+    .with_attached_fired_tile_photo
+    .order(created_at: :desc, id: :desc)
+    .select do |obs|
+      (obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted?) ||
+        (obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted?)
+    end
+%>
+
+<div id="sample_photo_gallery">
+  <% if outcrop_photos.any? || tile_observations.any? %>
+    <div data-photo-gallery class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
+          Field &amp; Test-Tile Photo Journal
+        </h3>
+        <p class="text-[11px] text-stone-500">
+          Outcrop site captures and raw-to-fired test-tile color progression
+        </p>
+      </div>
+      <span class="font-mono text-[11px] text-stone-500">
+        <%= pluralize(outcrop_photos.size, "outcrop") %> · <%= pluralize(tile_observations.size, "tile log") %>
+      </span>
+    </div>
+
+    <% if outcrop_photos.any? %>
+      <div class="space-y-2" data-outcrop-photo-grid>
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
+          Outcrop / Dig-Site Photos
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <% outcrop_photos.each do |photo| %>
+            <figure class="rounded-xl border border-[#D6C7B2] bg-white overflow-hidden shadow-xs group">
+              <%= link_to url_for(photo), target: "_blank", rel: "noopener", class: "block relative overflow-hidden bg-stone-100" do %>
+                <%= image_tag url_for(photo),
+                  alt: "#{sample.title} — #{photo.filename}",
+                  class: "w-full h-28 object-cover group-hover:scale-[1.02] transition-transform duration-150" %>
+              <% end %>
+              <figcaption class="px-2.5 py-1.5 flex items-center justify-between gap-1.5 text-[10px] text-stone-600 border-t border-[#E8DFD0]">
+                <span class="truncate font-medium" title="<%= photo.filename %>"><%= photo.filename %></span>
+                <span class="font-mono text-stone-400 shrink-0"><%= number_to_human_size(photo.byte_size) %></span>
+              </figcaption>
+            </figure>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <% if tile_observations.any? %>
+      <div class="space-y-2.5 <%= 'pt-3 border-t border-[#E8DFD0]' if outcrop_photos.any? %>" data-tile-progression-gallery>
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-stone-600">
+          Raw vs. Fired Test-Tile Progression
+        </div>
+        <div class="space-y-2.5">
+          <% tile_observations.each do |obs| %>
+            <div class="rounded-xl border border-[#D6C7B2] bg-white p-3 space-y-2.5" data-tile-observation="<%= obs.id %>">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <% if obs.fired_cone.present? %>
+                    <span class="px-2 py-0.5 rounded-full font-mono font-semibold bg-[#1E4E79]/10 text-[#1E4E79] border border-[#1E4E79]/20">
+                      Cone <%= obs.fired_cone %>
+                    </span>
+                  <% end %>
+                  <% if obs.fired_color.present? %>
+                    <span class="px-2 py-0.5 rounded-full font-medium bg-[#FAF7F2] text-stone-800 border border-[#D6C7B2]">
+                      <%= obs.fired_color %>
+                    </span>
+                  <% end %>
+                  <% if obs.melt_state.present? %>
+                    <span class="px-2 py-0.5 rounded-full font-semibold bg-[#B84A27]/10 text-[#963B1D] border border-[#B84A27]/20">
+                      <%= obs.melt_state.humanize %>
+                    </span>
+                  <% end %>
+                </div>
+                <span class="font-mono text-[10px] text-stone-400">Log #<%= obs.id %></span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div class="space-y-1">
+                  <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                    Raw / Unfired<%= " · #{obs.raw_color}" if obs.raw_color.present? %>
+                  </div>
+                  <% if obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? %>
+                    <%= link_to url_for(obs.raw_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag url_for(obs.raw_tile_photo),
+                        alt: "Raw test tile for #{sample.title} (log ##{obs.id})",
+                        class: "w-full h-28 object-cover" %>
+                    <% end %>
+                  <% else %>
+                    <div class="h-28 rounded-lg border border-dashed border-[#D6C7B2] bg-[#FAF7F2] flex items-center justify-center text-[11px] text-stone-400">
+                      No raw tile photo
+                    </div>
+                  <% end %>
+                </div>
+
+                <div class="space-y-1">
+                  <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                    Fired Tile<%= " · Cone #{obs.fired_cone}" if obs.fired_cone.present? %>
+                  </div>
+                  <% if obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? %>
+                    <%= link_to url_for(obs.fired_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag url_for(obs.fired_tile_photo),
+                        alt: "Fired test tile for #{sample.title} (log ##{obs.id})",
+                        class: "w-full h-28 object-cover" %>
+                    <% end %>
+                  <% else %>
+                    <div class="h-28 rounded-lg border border-dashed border-[#D6C7B2] bg-[#FAF7F2] flex items-center justify-center text-[11px] text-stone-400">
+                      No fired tile photo
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+    </div>
+  <% end %>
+</div>

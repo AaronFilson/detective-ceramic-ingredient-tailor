@@ -1,13 +1,18 @@
 # frozen_string_literal: true
 
 module Chemistry
-  # Computes local 2-material line blends (0/100..100/0, 11 steps) and 3-material
-  # triaxial simplex blends (5% step, 231 candidates), scores each candidate against
-  # Cone 6 / Cone 10 Gloss & Matte Seger UMF target bands, classifies Stull zones,
+  # Computes 2-material line blends (0/100..100/0, 11 steps) and 3-material
+  # triaxial simplex blends (5% step, 231 candidates) across assayed local
+  # UserSamples and commercial Studio Stock Modifiers. Blends both major and
+  # minor ceramic oxides (including Cone 6 B2O3 and Li2O/SrO/ZnO), scores each
+  # candidate against Cone 6 / Cone 10 Gloss & Matte Seger UMF target bands,
+  # classifies Stull zones, predicts Appen/English-Turner thermal expansion COE,
   # and exports combined Materials + Recipe bundles for Glazecalc and Glaze Vault.
   class BlendRecipeBuilder
     LINE_BLEND_STEP = 10
     TRIAXIAL_STEP = 5
+
+    BLENDABLE_MINOR_KEYS = (CeramicOxides::MINOR_KEYS - %w[SO3 F]).freeze
 
     STULL_ZONES = [
       "Gloss",
@@ -28,7 +33,8 @@ module Chemistry
         si_al: 6.5..9.5,
         flux_axis: :r2o,
         r2o: 0.20..0.45,
-        ro: 0.55..0.80
+        ro: 0.55..0.80,
+        b2o3: 0.12..0.32
       }.freeze,
       [ "6", "matte" ] => {
         label: "Cone 6 Matte",
@@ -40,7 +46,8 @@ module Chemistry
         si_al: 4.5..6.8,
         flux_axis: :ro,
         ro: 0.60..0.85,
-        r2o: 0.15..0.40
+        r2o: 0.15..0.40,
+        b2o3: 0.12..0.32
       }.freeze,
       [ "10", "gloss" ] => {
         label: "Cone 10 Gloss",
@@ -68,10 +75,23 @@ module Chemistry
       }.freeze
     }.freeze
 
+    STOCK_GLAZE_VAULT_CLASSES = {
+      "epk_kaolin" => "kaolin",
+      "om4_ball_clay" => "ball clay",
+      "silica" => "silica",
+      "talc" => "talc",
+      "wollastonite" => "wollastonite",
+      "nepheline_syenite" => "nepheline syenite",
+      "custer_feldspar" => "feldspar",
+      "minspar_200" => "feldspar"
+    }.freeze
+
     Candidate = Struct.new(
       :weights,
       :oxides,
+      :minor_oxides,
       :umf,
+      :coe_report,
       :penalty,
       :fit_score,
       :stull_zone,
@@ -86,6 +106,14 @@ module Chemistry
         umf.dig("intermediates", "Al2O3").to_f
       end
 
+      def b2o3
+        umf.dig("intermediates", "B2O3").to_f
+      end
+
+      def li2o
+        umf.dig("fluxes", "Li2O").to_f
+      end
+
       def si_al_ratio
         umf["si_al_ratio"]
       end
@@ -96,6 +124,14 @@ module Chemistry
 
       def ro_total
         umf["ro_total"].to_f
+      end
+
+      def coe
+        coe_report&.coe
+      end
+
+      def crazing_risk
+        coe_report&.risk_level
       end
 
       def all_in_band?
@@ -120,6 +156,7 @@ module Chemistry
       :optimal,
       :candidates,
       :ranked_candidates,
+      :b2o3_missing_cone6,
       keyword_init: true
     ) do
       def line_blend?
@@ -128,6 +165,10 @@ module Chemistry
 
       def triaxial?
         mode == :triaxial
+      end
+
+      def b2o3_missing_cone6?
+        !!b2o3_missing_cone6
       end
 
       def top_candidates(limit = 12)
@@ -173,7 +214,7 @@ module Chemistry
       firing = blend_result.target_band.fetch(:firing)
 
       serialized_materials = blend_result.samples.map do |sample|
-        Exporters::GlazecalcMaterialSerializer.call(sample)
+        serialize_glazecalc_material(sample)
       end
 
       recipe_materials = chosen.positive_weights.map do |entry|
@@ -207,7 +248,7 @@ module Chemistry
       now_iso = Time.current.utc.iso8601
 
       serialized_materials = blend_result.samples.map do |sample|
-        Exporters::GlazeVaultSerializer.call(sample).fetch("materials").first
+        serialize_glaze_vault_material(sample, now_iso)
       end
 
       recipe_lines = chosen.positive_weights.map do |entry|
@@ -215,6 +256,27 @@ module Chemistry
           "material" => entry[:sample].title.to_s,
           "amount" => entry[:percentage]
         }
+      end
+
+      stock_keys = blend_result.samples.filter_map do |sample|
+        sample.key if stock_material?(sample)
+      end
+
+      provenance = {
+        "generator" => "Chemistry::BlendRecipeBuilder",
+        "mode" => blend_result.mode.to_s,
+        "target_cone" => blend_result.target_cone,
+        "surface" => blend_result.surface,
+        "stull_zone" => chosen.stull_zone,
+        "fit_score" => chosen.fit_score,
+        "umf_formula" => chosen.umf,
+        "minor_oxides" => chosen.minor_oxides || {},
+        "sample_ids" => blend_result.samples.map(&:id)
+      }
+      provenance["stock_keys"] = stock_keys if stock_keys.any?
+      if chosen.coe_report.present?
+        provenance["coe"] = chosen.coe
+        provenance["crazing_risk"] = chosen.crazing_risk.to_s
       end
 
       {
@@ -233,37 +295,155 @@ module Chemistry
           }
         ],
         "materials" => serialized_materials,
-        "provenance" => {
-          "generator" => "Chemistry::BlendRecipeBuilder",
-          "mode" => blend_result.mode.to_s,
-          "target_cone" => blend_result.target_cone,
-          "surface" => blend_result.surface,
-          "stull_zone" => chosen.stull_zone,
-          "fit_score" => chosen.fit_score,
-          "umf_formula" => chosen.umf,
-          "sample_ids" => blend_result.samples.map(&:id)
-        }
+        "provenance" => provenance
       }
     end
+
+    def self.stock_material?(sample)
+      sample.respond_to?(:stock?) && sample.stock?
+    end
+    private_class_method :stock_material?
+
+    def self.serialize_glazecalc_material(sample)
+      return Exporters::GlazecalcMaterialSerializer.call(sample) unless stock_material?(sample)
+
+      normalized = Exporters::GlazecalcMaterialSerializer.normalize_oxides(
+        sample.oxides,
+        minor_oxides: sample.minor_oxides
+      )
+      loi = normalized.fetch("LOI")
+      fired_keys = normalized.keys - [ "LOI" ]
+      molar_masses = CeramicOxides::ALL_OXIDE_MOLAR_WEIGHTS
+
+      moles_per_gram = fired_keys.each_with_object({}) do |oxide, acc|
+        acc[oxide] = (normalized[oxide] / 100.0) / molar_masses.fetch(oxide)
+      end
+
+      flux_per_gram = (fired_keys & Chemistry::UmfCalculator::ALL_FLUX_OXIDES).sum { |oxide| moles_per_gram[oxide] }
+      raw_equivalent = flux_per_gram.positive? ? (1.0 / flux_per_gram) : 100.0
+      equivalent = raw_equivalent.round(2)
+      formulaweight = (equivalent * (1.0 - loi / 100.0)).round(2)
+
+      fields = fired_keys.filter_map do |oxide|
+        pct = normalized[oxide]
+        next unless pct.positive?
+
+        {
+          "name" => oxide,
+          "amount" => format("%.2f", pct),
+          "amountUnity" => (moles_per_gram[oxide] * raw_equivalent).round(4)
+        }
+      end
+
+      oxide_analysis = fired_keys.each_with_object({}) do |oxide, acc|
+        pct = normalized[oxide]
+        acc[oxide] = pct if pct.positive?
+      end
+
+      rawformula_entries = fired_keys.filter_map do |oxide|
+        pct = normalized[oxide]
+        next unless pct.positive?
+
+        "#{oxide} #{format('%.2f', pct)}%"
+      end
+      rawformula_entries << "LOI #{format('%.2f', loi)}%" if loi.positive?
+
+      {
+        "name" => sample.title.to_s,
+        "fields" => fields,
+        "percentmole" => "percent",
+        "loi" => loi,
+        "molecularweight" => 100.0,
+        "equivalent" => equivalent,
+        "formulaweight" => formulaweight,
+        "rawformula" => rawformula_entries.join(", "),
+        "analysis" => oxide_analysis,
+        "oxideAnalysis" => oxide_analysis,
+        "oxides" => normalized,
+        "umf" => Exporters::GlazecalcMaterialSerializer.compute_umf(normalized),
+        "source" => {
+          "kind" => "studio_stock_catalog",
+          "application" => Exporters::GlazecalcMaterialSerializer::APPLICATION_NAME,
+          "stock_key" => sample.key,
+          "sample_id" => sample.id,
+          "role" => sample.role,
+          "generated_at" => Time.current.utc.iso8601
+        },
+        "notes" => [ sample.notes.to_s.strip ].reject(&:empty?),
+        "relatedTo" => [ sample.role.to_s, sample.material_category.to_s.tr("_", " ") ].reject(&:blank?).uniq
+      }
+    end
+    private_class_method :serialize_glazecalc_material
+
+    def self.serialize_glaze_vault_material(sample, now_iso)
+      return Exporters::GlazeVaultSerializer.call(sample).fetch("materials").first unless stock_material?(sample)
+
+      normalized = Exporters::GlazecalcMaterialSerializer.normalize_oxides(
+        sample.oxides,
+        minor_oxides: sample.minor_oxides
+      )
+      fired_keys = normalized.keys - [ "LOI" ]
+      oxide_entries = fired_keys.filter_map do |oxide|
+        pct = normalized[oxide]
+        next unless pct.positive?
+
+        {
+          "oxide" => oxide,
+          "percent" => format("%.2f", pct)
+        }
+      end
+
+      {
+        "name" => sample.title.to_s,
+        "category" => "material",
+        "oxides" => oxide_entries,
+        "loi" => format("%.2f", normalized.fetch("LOI")),
+        "class" => STOCK_GLAZE_VAULT_CLASSES.fetch(sample.key.to_s, "other"),
+        "notes" => sample.notes.to_s.strip,
+        "revision" => 1,
+        "savedAt" => now_iso
+      }
+    end
+    private_class_method :serialize_glaze_vault_material
 
     def self.build_recipe_notes(blend_result, candidate)
       mode_label = blend_result.line_blend? ? "Line Blend (10% steps)" : "Triaxial Blend (5% simplex)"
       si_al_str = candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "n/a"
 
-      [
+      minor_umf_bits = []
+      minor_umf_bits << format("B2O3 %.2f", candidate.b2o3) if candidate.b2o3.positive?
+      minor_umf_bits << format("Li2O %.2f", candidate.li2o) if candidate.li2o.positive?
+      %w[SrO BaO ZnO].each do |oxide|
+        val = candidate.umf.dig("fluxes", oxide).to_f
+        minor_umf_bits << format("%s %.2f", oxide, val) if val.positive?
+      end
+      minor_suffix = minor_umf_bits.any? ? ", #{minor_umf_bits.join(', ')}" : ""
+
+      parts = [
         "Generated by DCI Tailor #{mode_label} targeting #{blend_result.target_band[:label]}.",
         format(
-          "Predicted UMF: SiO2 %.2f, Al2O3 %.2f, Si:Al %s, R2O %.2f, RO %.2f (%s, Fit %.1f%%).",
+          "Predicted UMF: SiO2 %.2f, Al2O3 %.2f, Si:Al %s, R2O %.2f, RO %.2f%s (%s, Fit %.1f%%).",
           candidate.sio2,
           candidate.al2o3,
           si_al_str,
           candidate.r2o_total,
           candidate.ro_total,
+          minor_suffix,
           candidate.stull_zone,
           candidate.fit_score
-        ),
-        "Batch: #{candidate.positive_weights.map { |w| "#{w[:percentage]}% #{w[:sample].title}" }.join(', ')}."
-      ].join(" ")
+        )
+      ]
+
+      if candidate.coe_report.present?
+        parts << format(
+          "Predicted COE: %.2f x10^-7/C (%s).",
+          candidate.coe_report.coe,
+          candidate.coe_report.risk_label
+        )
+      end
+
+      parts << "Batch: #{candidate.positive_weights.map { |w| "#{w[:percentage]}% #{w[:sample].title}" }.join(', ')}."
+      parts.join(" ")
     end
     private_class_method :build_recipe_notes
 
@@ -276,13 +456,12 @@ module Chemistry
 
     def call
       validate_samples!
-      normalized_entries = @samples.map do |sample|
-        _resolved_sample, assay = Exporters::GlazecalcMaterialSerializer.resolve_records(sample)
-        {
-          sample: sample,
-          oxides: Exporters::GlazecalcMaterialSerializer.normalize_oxides(assay.oxides)
-        }
+      normalized_entries = @samples.map { |sample| normalize_input_entry(sample) }
+
+      @has_boron_source = normalized_entries.any? do |entry|
+        entry[:minor_oxides].fetch("B2O3", 0.0).positive?
       end
+      @score_b2o3 = @target_band[:b2o3].present? && @has_boron_source
 
       mode = @samples.size == 2 ? :line_blend : :triaxial
       percentage_grid = mode == :line_blend ? build_line_blend_grid : build_triaxial_grid
@@ -303,11 +482,36 @@ module Chemistry
         target_band: @target_band,
         optimal: ranked.first,
         candidates: candidates,
-        ranked_candidates: ranked
+        ranked_candidates: ranked,
+        b2o3_missing_cone6: (@target_cone == "6" && !@has_boron_source)
       )
     end
 
     private
+
+    def normalize_input_entry(sample)
+      raw_oxides, raw_minors = extract_sample_chemistry(sample)
+      normalized = Exporters::GlazecalcMaterialSerializer.normalize_oxides(
+        raw_oxides,
+        minor_oxides: raw_minors
+      )
+
+      {
+        sample: sample,
+        oxides: normalized.slice(*CeramicOxides::KEYS),
+        minor_oxides: normalized.slice(*BLENDABLE_MINOR_KEYS)
+      }
+    end
+
+    def extract_sample_chemistry(sample)
+      if sample.respond_to?(:stock?) && sample.stock?
+        [ sample.oxides, sample.minor_oxides ]
+      else
+        _resolved_sample, assay = Exporters::GlazecalcMaterialSerializer.resolve_records(sample)
+        minors = assay.respond_to?(:minor_oxides) ? assay.minor_oxides : nil
+        [ assay.oxides, minors ]
+      end
+    end
 
     def normalize_cone(value)
       cone = value.to_s.strip
@@ -357,22 +561,38 @@ module Chemistry
         }
       end
 
-      raw_oxides = CeramicOxides::KEYS.each_with_object({}) do |oxide, acc|
+      raw_majors = CeramicOxides::KEYS.each_with_object({}) do |oxide, acc|
         acc[oxide] = normalized_entries.each_with_index.sum do |entry, idx|
           (percentages[idx] / 100.0) * entry[:oxides].fetch(oxide, 0.0)
         end
       end
 
-      blended_oxides = Exporters::GlazecalcMaterialSerializer.normalize_oxides(raw_oxides)
-      umf = Chemistry::UmfCalculator.call(blended_oxides)
+      raw_minors = BLENDABLE_MINOR_KEYS.each_with_object({}) do |oxide, acc|
+        blended_val = normalized_entries.each_with_index.sum do |entry, idx|
+          (percentages[idx] / 100.0) * entry[:minor_oxides].fetch(oxide, 0.0)
+        end
+        acc[oxide] = blended_val if blended_val.positive?
+      end
+
+      normalized = Exporters::GlazecalcMaterialSerializer.normalize_oxides(
+        raw_majors,
+        minor_oxides: raw_minors
+      )
+      blended_majors = normalized.slice(*CeramicOxides::KEYS)
+      blended_minors = normalized.slice(*BLENDABLE_MINOR_KEYS).select { |_, val| val.positive? }
+
+      umf = Chemistry::UmfCalculator.call(blended_majors, minor_oxides: blended_minors)
+      coe_report = Chemistry::CoeCalculator.call(umf, oxides: blended_majors, minor_oxides: blended_minors)
       stull_zone = self.class.classify_stull_zone(umf)
       penalty, band_checks = score_candidate(umf, stull_zone)
       fit_score = (100.0 / (1.0 + penalty)).round(1)
 
       Candidate.new(
         weights: weights,
-        oxides: blended_oxides,
+        oxides: blended_majors,
+        minor_oxides: blended_minors,
         umf: umf,
+        coe_report: coe_report,
         penalty: penalty.round(4),
         fit_score: fit_score,
         stull_zone: stull_zone,
@@ -383,10 +603,9 @@ module Chemistry
     def score_candidate(umf, stull_zone)
       flux_total = umf["flux_total"].to_f
       if flux_total <= 0.0
-        return [
-          100.0,
-          { sio2: false, al2o3: false, si_al: false, flux: false }
-        ]
+        checks = { sio2: false, al2o3: false, si_al: false, flux: false }
+        checks[:b2o3] = false if @score_b2o3
+        return [ 100.0, checks ]
       end
 
       sio2 = umf.dig("glass_formers", "SiO2").to_f
@@ -408,6 +627,12 @@ module Chemistry
         (range_penalty(al2o3, @target_band[:al2o3]) * 1.2) +
         (range_penalty(si_al, @target_band[:si_al]) * 1.0) +
         (range_penalty(flux_val, flux_range) * 0.8)
+
+      if @score_b2o3
+        b2o3 = umf.dig("intermediates", "B2O3").to_f
+        band_checks[:b2o3] = @target_band[:b2o3].cover?(b2o3)
+        penalty += range_penalty(b2o3, @target_band[:b2o3]) * 1.0
+      end
 
       expected_zone = @surface == "gloss" ? "Gloss" : "Matte"
       penalty += 0.15 unless stull_zone == expected_zone

@@ -1,5 +1,9 @@
 <div id="field_observation_history">
-  <% observations = sample.field_observations.order(created_at: :desc, id: :desc).limit(4) %>
+  <% observations = sample.field_observations
+    .with_attached_raw_tile_photo
+    .with_attached_fired_tile_photo
+    .order(created_at: :desc, id: :desc)
+    .limit(4) %>
   <% if observations.any? %>
     <div class="pt-3 border-t border-[#E8DFD0] space-y-2">
       <div class="text-[11px] font-bold uppercase tracking-wider text-stone-500">
@@ -8,6 +12,8 @@
       <div class="space-y-1.5">
         <% observations.each do |obs| %>
           <% fit_badges = body_fit_assessment(obs) %>
+          <% has_raw_photo = obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? %>
+          <% has_fired_photo = obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? %>
           <div class="rounded-lg bg-[#FAF7F2] border border-[#E8DFD0] px-3 py-2 text-[11px] text-stone-700 space-y-1.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex flex-wrap items-center gap-1.5">
@@ -74,6 +80,27 @@
                   >
                     <%= badge[:label] %>
                   </span>
+                <% end %>
+              </div>
+            <% end %>
+
+            <% if has_raw_photo || has_fired_photo %>
+              <div class="flex flex-wrap items-center gap-2.5 pt-1" data-history-tile-photos="<%= obs.id %>">
+                <% if has_raw_photo %>
+                  <%= link_to url_for(obs.raw_tile_photo), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#B84A27] transition-colors" do %>
+                    <%= image_tag url_for(obs.raw_tile_photo),
+                      alt: "Raw tile photo for observation ##{obs.id}",
+                      class: "w-11 h-11 rounded object-cover" %>
+                    <span class="pr-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-600">Raw</span>
+                  <% end %>
+                <% end %>
+                <% if has_fired_photo %>
+                  <%= link_to url_for(obs.fired_tile_photo), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#1E4E79] transition-colors" do %>
+                    <%= image_tag url_for(obs.fired_tile_photo),
+                      alt: "Fired tile photo for observation ##{obs.id}",
+                      class: "w-11 h-11 rounded object-cover" %>
+                    <span class="pr-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#1E4E79]">Fired</span>
+                  <% end %>
                 <% end %>
               </div>
             <% end %>

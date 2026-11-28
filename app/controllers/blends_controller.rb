@@ -3,24 +3,31 @@
 class BlendsController < ApplicationController
   def index
     @available_samples = load_available_samples
+    @stock_groups = Chemistry::StockMaterialsCatalog.grouped_by_role
     @target_cone = normalized_cone_param
     @surface = normalized_surface_param
     @recipe_title = extract_param(:recipe_title).to_s.strip.presence
     @selected_sample_ids = parse_sample_ids(extract_param(:sample_ids))
+    @selected_stock_keys = parse_stock_keys(extract_param(:stock_keys))
+    @auto_reformulated = false
 
-    if @selected_sample_ids.empty? && @available_samples.size >= 2
-      @selected_sample_ids = default_sample_ids(@available_samples)
+    if @selected_sample_ids.empty? && @selected_stock_keys.empty?
+      if @available_samples.size >= 2
+        @selected_sample_ids = default_sample_ids(@available_samples)
+      elsif @available_samples.size == 1
+        @selected_sample_ids = [ @available_samples.first.id ]
+        @selected_stock_keys = default_stock_keys_for_cone(@target_cone)
+        @auto_reformulated = true
+      end
     end
 
-    if @selected_sample_ids.size.between?(2, 3)
-      selected = resolve_selected_samples(@selected_sample_ids)
-      if selected.size.between?(2, 3)
-        @blend_result = Chemistry::BlendRecipeBuilder.call(
-          samples: selected,
-          target_cone: @target_cone,
-          surface: @surface
-        )
-      end
+    selected = resolve_selected_materials(@selected_sample_ids, @selected_stock_keys)
+    if selected.size.between?(2, 3)
+      @blend_result = Chemistry::BlendRecipeBuilder.call(
+        samples: selected,
+        target_cone: @target_cone,
+        surface: @surface
+      )
     end
   rescue ArgumentError => e
     @error_message = e.message
@@ -28,12 +35,15 @@ class BlendsController < ApplicationController
 
   def create
     @available_samples = load_available_samples
+    @stock_groups = Chemistry::StockMaterialsCatalog.grouped_by_role
     @target_cone = normalized_cone_param
     @surface = normalized_surface_param
     @recipe_title = extract_param(:recipe_title).to_s.strip.presence
     @selected_sample_ids = parse_sample_ids(extract_param(:sample_ids))
+    @selected_stock_keys = parse_stock_keys(extract_param(:stock_keys))
+    @auto_reformulated = false
 
-    selected = resolve_selected_samples(@selected_sample_ids)
+    selected = resolve_selected_materials(@selected_sample_ids, @selected_stock_keys)
     @blend_result = Chemistry::BlendRecipeBuilder.call(
       samples: selected,
       target_cone: @target_cone,
@@ -105,6 +115,10 @@ class BlendsController < ApplicationController
       .select { |sample| sample.latest_assay_result&.oxides.present? }
   end
 
+  def resolve_selected_materials(sample_ids, stock_keys)
+    resolve_selected_samples(sample_ids) + resolve_selected_stock_materials(stock_keys)
+  end
+
   def resolve_selected_samples(ids)
     return [] if ids.empty?
 
@@ -116,17 +130,28 @@ class BlendsController < ApplicationController
     ids.filter_map { |id| by_id[id] }
   end
 
+  def resolve_selected_stock_materials(keys)
+    return [] if keys.empty?
+
+    keys.filter_map { |key| Chemistry::StockMaterialsCatalog.find(key) }
+  end
+
   def default_sample_ids(samples)
     distinct_categories = samples.uniq(&:material_category)
     picks = distinct_categories.size >= 2 ? distinct_categories.first(2) : samples.first(2)
     picks.map(&:id)
   end
 
+  def default_stock_keys_for_cone(cone)
+    cone == "10" ? %w[whiting epk_kaolin] : %w[whiting ferro_frit_3134]
+  end
+
   def build_export_blend
     ids = parse_sample_ids(extract_param(:sample_ids))
-    selected = resolve_selected_samples(ids)
-    cone = extract_param(:target_cone).presence || "6"
-    surface = extract_param(:surface).presence || "gloss"
+    stock_keys = parse_stock_keys(extract_param(:stock_keys))
+    selected = resolve_selected_materials(ids, stock_keys)
+    cone = extract_param(:target_cone).presence || current_studio_setting.blend_target_cone
+    surface = extract_param(:surface).presence || current_studio_setting.default_blend_surface
     recipe_title = extract_param(:recipe_title).to_s.strip.presence
 
     blend_result = Chemistry::BlendRecipeBuilder.call(
@@ -143,7 +168,8 @@ class BlendsController < ApplicationController
       blend_result: @blend_result,
       error_message: @error_message,
       recipe_title: @recipe_title,
-      available_samples: @available_samples
+      available_samples: @available_samples,
+      auto_reformulated: @auto_reformulated
     }
   end
 
@@ -153,6 +179,15 @@ class BlendsController < ApplicationController
       .reject(&:blank?)
       .map(&:to_i)
       .select(&:positive?)
+      .uniq
+  end
+
+  def parse_stock_keys(raw)
+    Array(raw)
+      .flatten
+      .map { |val| val.to_s.strip.downcase.delete_prefix("stock:") }
+      .reject(&:blank?)
+      .select { |key| Chemistry::StockMaterialsCatalog.find(key).present? }
       .uniq
   end
 

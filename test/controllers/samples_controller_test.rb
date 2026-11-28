@@ -617,4 +617,209 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       end
     end
   end
+
+  test "POST /samples uploads outcrop photo, auto-pins coordinates from EXIF GPS, links GeologicUnit, and renders photo gallery" do
+    photo = build_uploaded_exif_jpeg(lat: 47.2529, lng: -122.4443, filename: "tacoma_outcrop.jpg")
+
+    assert_difference [ "UserSample.count", "AssayResult.count" ], 1 do
+      post samples_path, params: {
+        auto_pin_from_photo: "1",
+        user_sample: {
+          title: "EXIF Auto-Pinned Bluff Clay",
+          material_category: "wild_clay",
+          latitude: "35.6870",
+          longitude: "-105.9378",
+          outcrop_photos: [ photo ]
+        }
+      }
+    end
+
+    sample = UserSample.order(:id).last
+    assert_redirected_to sample_path(sample)
+    assert_includes flash[:notice], "Pinned coordinates (47.2529, -122.4443) automatically from outcrop photo EXIF GPS."
+    assert_in_delta 47.2529, sample.latitude, 0.0001
+    assert_in_delta(-122.4443, sample.longitude, 0.0001)
+    assert_equal @tacoma_unit.id, sample.geologic_unit_id
+    assert_equal 1, sample.outcrop_photos.count
+    assert_equal "tacoma_outcrop.jpg", sample.outcrop_photos.first.filename.to_s
+
+    get sample_path(sample)
+    assert_response :success
+    assert_select "#sample_photo_gallery [data-outcrop-photo-grid] img", count: 1
+    assert_includes response.body, "tacoma_outcrop.jpg"
+  end
+
+  test "POST /samples auto-pins from EXIF GPS when coordinates are blank even without auto_pin_from_photo checkbox" do
+    photo = build_uploaded_exif_jpeg(lat: 47.2529, lng: -122.4443, filename: "blank_coords_exif.jpg")
+
+    post samples_path, params: {
+      user_sample: {
+        title: "Blank Coords EXIF Clay",
+        material_category: "wild_clay",
+        latitude: "",
+        longitude: "",
+        outcrop_photos: [ photo ]
+      }
+    }
+
+    sample = UserSample.order(:id).last
+    assert_redirected_to sample_path(sample)
+    assert_in_delta 47.2529, sample.latitude, 0.0001
+    assert_in_delta(-122.4443, sample.longitude, 0.0001)
+    assert_equal @tacoma_unit.id, sample.geologic_unit_id
+  end
+
+  test "PATCH /samples/:id attaches additional outcrop photos without deleting existing photos" do
+    sample = UserSample.create!(
+      title: "Multi-Photo Outcrop Clay",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443
+    )
+    sample.outcrop_photos.attach(
+      io: StringIO.new(minimal_jpeg_bytes),
+      filename: "seam_first.jpg",
+      content_type: "image/jpeg"
+    )
+    SamplesController.estimate_sample(sample)
+    assert_equal 1, sample.outcrop_photos.count
+
+    second_photo = Rack::Test::UploadedFile.new(
+      StringIO.new(minimal_jpeg_bytes),
+      "image/jpeg",
+      true,
+      original_filename: "seam_second.jpg"
+    )
+
+    patch sample_path(sample), params: {
+      user_sample: {
+        title: "Multi-Photo Outcrop Clay",
+        material_category: "wild_clay",
+        outcrop_photos: [ second_photo ]
+      }
+    }
+
+    assert_redirected_to sample_path(sample)
+    filenames = sample.reload.outcrop_photos.map { |p| p.filename.to_s }.sort
+    assert_equal [ "seam_first.jpg", "seam_second.jpg" ], filenames
+  end
+
+  test "POST /samples rejects non-image outcrop upload with 422" do
+    bad_file = Rack::Test::UploadedFile.new(
+      StringIO.new("not an image payload"),
+      "text/plain",
+      false,
+      original_filename: "notes.txt"
+    )
+
+    assert_no_difference "UserSample.count" do
+      post samples_path, params: {
+        user_sample: {
+          title: "Invalid Photo Sample",
+          material_category: "wild_clay",
+          latitude: "47.2529",
+          longitude: "-122.4443",
+          outcrop_photos: [ bad_file ]
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "must be a JPEG, PNG, or WebP image"
+  end
+
+  test "PATCH /samples/:id rejects non-image outcrop upload with 422 while preserving existing photo" do
+    sample = UserSample.create!(
+      title: "Protected Photo Sample",
+      material_category: :wild_clay,
+      latitude: 47.2529,
+      longitude: -122.4443
+    )
+    sample.outcrop_photos.attach(
+      io: StringIO.new(minimal_jpeg_bytes),
+      filename: "valid_outcrop.jpg",
+      content_type: "image/jpeg"
+    )
+    SamplesController.estimate_sample(sample)
+
+    bad_file = Rack::Test::UploadedFile.new(
+      StringIO.new("plain text"),
+      "text/plain",
+      false,
+      original_filename: "bad.txt"
+    )
+
+    assert_no_difference [ "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ] do
+      patch sample_path(sample), params: {
+        user_sample: {
+          title: "Protected Photo Sample",
+          outcrop_photos: [ bad_file ]
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "must be a JPEG, PNG, or WebP image"
+    assert_equal [ "valid_outcrop.jpg" ], sample.reload.outcrop_photos.map { |p| p.filename.to_s }
+
+    valid_new_photo = Rack::Test::UploadedFile.new(
+      StringIO.new(minimal_jpeg_bytes),
+      "image/jpeg",
+      true,
+      original_filename: "rolled_back.jpg"
+    )
+
+    assert_no_difference [ "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ] do
+      patch sample_path(sample), params: {
+        user_sample: {
+          title: "",
+          outcrop_photos: [ valid_new_photo ]
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal [ "valid_outcrop.jpg" ], sample.reload.outcrop_photos.map { |p| p.filename.to_s }
+  end
+
+  private
+
+  def minimal_jpeg_bytes
+    "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9".b
+  end
+
+  def build_uploaded_exif_jpeg(lat:, lng:, filename:)
+    lat_ref = lat >= 0 ? "N\x00\x00\x00".b : "S\x00\x00\x00".b
+    lng_ref = lng >= 0 ? "E\x00\x00\x00".b : "W\x00\x00\x00".b
+    lat_dms = decimal_to_dms(lat.abs)
+    lng_dms = decimal_to_dms(lng.abs)
+
+    tiff = +"II".b
+    tiff << [ 42 ].pack("v")
+    tiff << [ 8 ].pack("V")
+    tiff << [ 1 ].pack("v")
+    tiff << [ 0x8825, 4, 1, 26 ].pack("vvVV")
+    tiff << [ 0 ].pack("V")
+    tiff << [ 4 ].pack("v")
+    tiff << [ 0x0001, 2, 2 ].pack("vvV") << lat_ref
+    tiff << [ 0x0002, 5, 3, 80 ].pack("vvVV")
+    tiff << [ 0x0003, 2, 2 ].pack("vvV") << lng_ref
+    tiff << [ 0x0004, 5, 3, 104 ].pack("vvVV")
+    tiff << [ 0 ].pack("V")
+    lat_dms.each { |num, den| tiff << [ num, den ].pack("VV") }
+    lng_dms.each { |num, den| tiff << [ num, den ].pack("VV") }
+
+    app1_payload = "Exif\x00\x00".b + tiff
+    jpeg = "\xFF\xD8\xFF\xE1".b + [ app1_payload.bytesize + 2 ].pack("n") + app1_payload + "\xFF\xD9".b
+
+    Rack::Test::UploadedFile.new(StringIO.new(jpeg), "image/jpeg", true, original_filename: filename)
+  end
+
+  def decimal_to_dms(decimal)
+    deg = decimal.floor
+    rem_min = (decimal - deg) * 60.0
+    min = rem_min.floor
+    sec = ((rem_min - min) * 60.0 * 10_000).round
+    [ [ deg, 1 ], [ min, 1 ], [ sec, 10_000 ] ]
+  end
 end
