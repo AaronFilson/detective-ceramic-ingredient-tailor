@@ -1,4 +1,5 @@
 require "active_support/core_ext/integer/time"
+require "logger"
 require "uri"
 
 Rails.application.configure do
@@ -62,19 +63,27 @@ Rails.application.configure do
 
   # Configure outgoing SMTP delivery when SMTP_URL is provided (e.g. AWS SES in us-west-2).
   if ENV["SMTP_URL"].present?
-    smtp_uri = URI.parse(ENV["SMTP_URL"])
-    config.action_mailer.delivery_method = :smtp
-    config.action_mailer.perform_deliveries = true
-    config.action_mailer.raise_delivery_errors = true
-    config.action_mailer.smtp_settings = {
-      address: smtp_uri.host,
-      port: smtp_uri.port || 587,
-      user_name: smtp_uri.user ? URI.decode_www_form_component(smtp_uri.user) : nil,
-      password: smtp_uri.password ? URI.decode_www_form_component(smtp_uri.password) : nil,
-      authentication: :plain,
-      enable_starttls_auto: smtp_uri.scheme != "smtps",
-      tls: smtp_uri.scheme == "smtps"
-    }.compact
+    begin
+      smtp_uri = URI.parse(ENV["SMTP_URL"])
+      raise URI::InvalidURIError, "SMTP_URL is missing a host" if smtp_uri.host.blank?
+
+      config.action_mailer.delivery_method = :smtp
+      config.action_mailer.perform_deliveries = true
+      config.action_mailer.raise_delivery_errors = true
+      config.action_mailer.smtp_settings = {
+        address: smtp_uri.host,
+        port: smtp_uri.port || 587,
+        user_name: smtp_uri.user ? URI::DEFAULT_PARSER.unescape(smtp_uri.user) : nil,
+        password: smtp_uri.password ? URI::DEFAULT_PARSER.unescape(smtp_uri.password) : nil,
+        authentication: :plain,
+        enable_starttls_auto: smtp_uri.scheme != "smtps",
+        tls: smtp_uri.scheme == "smtps"
+      }.compact
+    rescue URI::InvalidURIError => e
+      (config.logger || Logger.new($stdout)).warn(
+        "[production] Ignoring invalid SMTP_URL (#{e.class}: #{e.message}); outgoing email delivery is disabled."
+      )
+    end
   end
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to

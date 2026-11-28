@@ -35,6 +35,28 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
 
     user.update!(password: "cone-10-reduction", password_confirmation: "cone-10-reduction")
     assert_nil User.find_by_token_for(:password_reset, token)
+
+    # Updating password to nil fails validation rather than wiping password_digest
+    assert_not user.update(password: nil)
+    assert user.errors[:password_digest].any?
+    assert user.reload.password_digest.present?
+    assert user.authenticate("cone-10-reduction")
+
+    # Empty password on :registration or :password_reset emits a single "can't be blank" error
+    empty_reg = User.new(email: "emptyreg@studio.example", password: "", password_confirmation: "")
+    assert_not empty_reg.valid?(:registration)
+    assert_equal [ "can't be blank" ], empty_reg.errors[:password]
+
+    user.assign_attributes(password: "", password_confirmation: "")
+    assert_not user.valid?(:password_reset)
+    assert_equal [ "can't be blank" ], user.errors[:password]
+
+    # Destroying a user destroys owned user_samples
+    user.reload
+    UserSample.create!(user: user, title: "Owned Studio Clay")
+    assert_difference -> { UserSample.count }, -1 do
+      user.destroy!
+    end
   end
 
   test "ApiToken.issue!, authenticate, and revoke! manage hashed personal Bearer tokens" do
@@ -43,6 +65,15 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
       email: "tokens@studio.example",
       password: "secure-password-10"
     )
+
+    too_long = ApiToken.new(
+      user: user,
+      name: "x" * 101,
+      token_prefix: "dcit_1234567",
+      token_digest: Digest::SHA256.hexdigest("dcit_overlong")
+    )
+    assert_not too_long.valid?
+    assert too_long.errors[:name].any?
 
     record, plaintext = ApiToken.issue!(user: user, name: "Glazecalc Desktop")
     assert plaintext.start_with?("dcit_")
@@ -56,9 +87,18 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
     assert_equal record, found_raw
     assert_not_nil record.reload.last_used_at
 
+    # Throttle last_used_at writes within 1 minute, update once older than 1 minute
+    recent_ts = 20.seconds.ago.change(usec: 0)
+    record.update_column(:last_used_at, recent_ts)
     found_bearer = ApiToken.authenticate("Bearer #{plaintext}")
     assert_equal record, found_bearer
     assert_equal user, found_bearer.user
+    assert_equal recent_ts, record.reload.last_used_at
+
+    stale_ts = 2.minutes.ago.change(usec: 0)
+    record.update_column(:last_used_at, stale_ts)
+    ApiToken.authenticate("Bearer #{plaintext}")
+    assert_operator record.reload.last_used_at, :>, stale_ts
 
     assert_nil ApiToken.authenticate("Bearer invalid_prefix_12345")
     assert_nil ApiToken.authenticate("Bearer dcit_000000000000000000000000000000000000000000000000")
@@ -120,9 +160,20 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
     assert_equal user.id, guest_1_setting.user_id
     assert_nil guest_1_setting.guest_token
     assert_equal "Preseeded Studio", StudioSetting.for_context(user: user, guest_token: nil).studio_name
+
+    # Claiming a guest token when user already owns a StudioSetting deletes the orphaned guest row
+    StudioSetting.claim_guest!(guest_token: "guest_2", user: user)
+    assert_nil StudioSetting.find_by(guest_token: "guest_2")
+    assert_equal "Preseeded Studio", StudioSetting.for_context(user: user, guest_token: nil).studio_name
+
+    # StudioSetting.current without Current context does not return an existing user's StudioSetting
+    fresh_default = StudioSetting.current
+    assert_nil fresh_default.user_id
+    assert_nil fresh_default.guest_token
+    assert_not_equal guest_1_setting.id, fresh_default.id
   end
 
-  test "ReferenceAssay.fuzz_coordinates offsets coordinates deterministically within ~1.5 to 2.5 km" do
+  test "ReferenceAssay.fuzz_coordinates offsets coordinates deterministically via keyed HMAC within ~1.5 to 2.5 km" do
     [
       [ 47.2529, -122.4443, "sample-101" ],
       [ 35.6870, -105.9378, "sample-202" ],
@@ -135,6 +186,10 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
 
       dist_km = haversine_km(lat, lng, fuzzed_lat, fuzzed_lng)
       assert dist_km.between?(1.5, 2.5), "Expected fuzzed offset #{dist_km.round(3)} km to be within 1.5..2.5 km"
+
+      unkeyed_lat, unkeyed_lng = unkeyed_sha256_fuzz_coordinates(lat, lng, seed_key)
+      assert_not_equal [ unkeyed_lat, unkeyed_lng ], [ fuzzed_lat, fuzzed_lng ],
+        "HMAC-keyed fuzz_coordinates must not match predictable unkeyed Digest::SHA256"
     end
 
     other_lat, other_lng = ReferenceAssay.fuzz_coordinates(47.2529, -122.4443, seed_key: "sample-999")
@@ -147,6 +202,22 @@ class UserAndApiTokenTest < ActiveSupport::TestCase
   end
 
   private
+
+  def unkeyed_sha256_fuzz_coordinates(lat, lng, seed_key)
+    digest = Digest::SHA256.hexdigest(seed_key.to_s)
+    u_dist = digest[0, 8].to_i(16) / 4_294_967_295.0
+    u_bearing = digest[8, 8].to_i(16) / 4_294_967_295.0
+    distance_km = 1.6 + (u_dist * 0.8)
+    bearing_rad = u_bearing * 2.0 * Math::PI
+    delta_north_km = distance_km * Math.cos(bearing_rad)
+    delta_east_km = distance_km * Math.sin(bearing_rad)
+    cos_lat = [ Math.cos(lat * Math::PI / 180.0).abs, 0.01 ].max
+    km_per_deg_lng = ReferenceAssay::KM_PER_DEGREE_LAT * cos_lat
+    [
+      (lat + (delta_north_km / ReferenceAssay::KM_PER_DEGREE_LAT)).clamp(-90.0, 90.0).round(4),
+      (lng + (delta_east_km / km_per_deg_lng)).clamp(-180.0, 180.0).round(4)
+    ]
+  end
 
   def haversine_km(lat1, lng1, lat2, lng2)
     rad = Math::PI / 180.0

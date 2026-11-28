@@ -12,9 +12,9 @@
       </div>
     <% end %>
 
-    <%= link_to "← Continue in Guest Sandbox",
+    <%= link_to(authenticated? ? "← Back to Workbench" : "← Continue in Guest Sandbox",
       root_path,
-      class: "px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-medium transition-colors" %>
+      class: "px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-medium transition-colors") %>
   </header>
 
   <main class="flex-1 flex items-center justify-center px-4 py-10">

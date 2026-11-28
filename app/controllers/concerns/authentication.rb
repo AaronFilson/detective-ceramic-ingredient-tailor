@@ -54,7 +54,8 @@ module Authentication
       cookies.signed.permanent[:guest_token] = {
         value: token,
         httponly: true,
-        same_site: :lax
+        same_site: :lax,
+        secure: Rails.env.production?
       }
     end
     Current.guest_token = token
@@ -62,6 +63,10 @@ module Authentication
 
   def start_new_session_for(user)
     prev_guest_token = cookies.signed[:guest_token].presence || Current.guest_token.presence
+    return_to = session[:return_to_after_authenticating]
+    Current.session&.destroy
+    reset_session
+    session[:return_to_after_authenticating] = return_to if return_to.present?
     claimed_samples = 0
 
     Session.transaction do
@@ -74,7 +79,8 @@ module Authentication
       cookies.signed.permanent[:session_id] = {
         value: session_record.id,
         httponly: true,
-        same_site: :lax
+        same_site: :lax,
+        secure: Rails.env.production?
       }
       claimed_samples = claim_guest_sandbox!(user, prev_guest_token)
     end
@@ -94,6 +100,7 @@ module Authentication
 
   def terminate_session
     Current.session&.destroy
+    reset_session
     Current.session = nil
     cookies.delete(:session_id)
     @current_studio_setting = nil
@@ -102,12 +109,17 @@ module Authentication
   def require_authentication
     return if authenticated?
 
-    session[:return_to_after_authenticating] = request.url if request.get? || request.head?
+    session[:return_to_after_authenticating] = request.fullpath if request.get? || request.head?
     redirect_to new_session_path, alert: "Please sign in to your studio account to continue."
   end
 
   def after_authentication_url
-    session.delete(:return_to_after_authenticating) || root_path
+    return_to = session.delete(:return_to_after_authenticating)
+    if return_to.is_a?(String) && return_to.start_with?("/") && !return_to.start_with?("//", "/\\")
+      return_to
+    else
+      root_path
+    end
   end
 
   def scoped_samples

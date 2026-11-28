@@ -17,11 +17,13 @@ class LabAssaysController < ApplicationController
     end
 
     coordinate_privacy = permitted[:coordinate_privacy].presence || "exact"
+    csv_upload = permitted[:csv_file]
+    csv_upload = nil unless csv_upload.respond_to?(:read)
 
     @result = if pxrf_submission?(permitted)
       Lab::PxrfCsvImporter.call(
         user_sample: @sample,
-        csv_file: permitted[:csv_file],
+        csv_file: csv_upload,
         dry_weight_g: permitted[:dry_weight_g],
         fired_weight_g: permitted[:fired_weight_g],
         measured_loi_pct: permitted[:measured_loi_pct],
@@ -36,7 +38,7 @@ class LabAssaysController < ApplicationController
         user_sample: @sample,
         source_type: permitted[:source_type].presence || :verified_lab_xrf,
         oxides: permitted[:oxides]&.to_h,
-        csv_file: permitted[:csv_file],
+        csv_file: csv_upload,
         lab_name: permitted[:lab_name],
         lab_report_ref: permitted[:lab_report_ref],
         promote_to_reference: permitted[:promote_to_reference],
@@ -68,14 +70,14 @@ class LabAssaysController < ApplicationController
       .find(params[:id])
 
     AssayResult.transaction do
-      ref_assay = @lab_assay.reference_assay
+      ref_assay_id = @lab_assay.reference_assay_id
       was_promoted = @lab_assay.promoted_to_reference?
       @lab_assay.destroy!
 
-      if was_promoted && ref_assay.present? &&
-          ref_assay.source.to_s.start_with?("community_verified_") &&
-          AssayResult.where(reference_assay_id: ref_assay.id).none?
-        ref_assay.destroy!
+      if was_promoted && ref_assay_id.present? &&
+          AssayResult.where(reference_assay_id: ref_assay_id).none?
+        ref_assay = ReferenceAssay.find_by(id: ref_assay_id)
+        ref_assay.destroy! if ref_assay&.source.to_s.start_with?("community_verified_")
       end
     end
 
@@ -101,6 +103,8 @@ class LabAssaysController < ApplicationController
   end
 
   def atlas_privacy_confirmation_missing?(permitted)
+    return false if @sample.latitude.blank? || @sample.longitude.blank?
+
     bool = ActiveModel::Type::Boolean.new
     return false unless bool.cast(permitted[:promote_to_reference])
     return false unless permitted[:privacy_prompt_shown].to_s == "1"

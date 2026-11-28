@@ -228,7 +228,66 @@ class AuthenticationAndIsolationTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "S3 direct-upload signed ActiveStorage::Blob ID string on POST /samples extracts EXIF GPS and auto-pins sample" do
+    jpeg_bytes = build_jpeg_with_gps(lat: 46.8523, lng: -121.7603)
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new(jpeg_bytes),
+      filename: "rainier_outcrop_direct.jpg",
+      content_type: "image/jpeg"
+    )
+
+    assert_difference -> { UserSample.count }, 1 do
+      post samples_path, params: {
+        auto_pin_from_photo: "1",
+        user_sample: {
+          title: "Direct Upload Rainier Outcrop",
+          material_category: "wild_clay",
+          latitude: "",
+          longitude: "",
+          outcrop_photos: [ blob.signed_id ]
+        }
+      }
+    end
+
+    created = UserSample.order(:id).last
+    assert_redirected_to sample_path(created)
+    assert created.outcrop_photos.attached?
+    assert_in_delta 46.8523, created.latitude, 0.001
+    assert_in_delta(-121.7603, created.longitude, 0.001)
+    assert_match(/Pinned coordinates \(46\.8523, -121\.7603\)/, flash[:notice])
+  end
+
   private
+
+  def build_jpeg_with_gps(lat:, lng:)
+    lat_ref = lat >= 0 ? "N\x00\x00\x00".b : "S\x00\x00\x00".b
+    lng_ref = lng >= 0 ? "E\x00\x00\x00".b : "W\x00\x00\x00".b
+    lat_dms = decimal_to_dms_rationals(lat.abs)
+    lng_dms = decimal_to_dms_rationals(lng.abs)
+
+    tiff = +"II".b
+    tiff << [ 42 ].pack("v") << [ 8 ].pack("V")
+    tiff << [ 1 ].pack("v") << [ 0x8825, 4, 1, 26 ].pack("vvVV") << [ 0 ].pack("V")
+    tiff << [ 4 ].pack("v")
+    tiff << [ 0x0001, 2, 2 ].pack("vvV") << lat_ref
+    tiff << [ 0x0002, 5, 3, 80 ].pack("vvVV")
+    tiff << [ 0x0003, 2, 2 ].pack("vvV") << lng_ref
+    tiff << [ 0x0004, 5, 3, 104 ].pack("vvVV")
+    tiff << [ 0 ].pack("V")
+    lat_dms.each { |num, den| tiff << [ num, den ].pack("VV") }
+    lng_dms.each { |num, den| tiff << [ num, den ].pack("VV") }
+
+    app1_payload = "Exif\x00\x00".b + tiff
+    +"\xFF\xD8\xFF\xE1".b + [ app1_payload.bytesize + 2 ].pack("n") + app1_payload + "\xFF\xD9".b
+  end
+
+  def decimal_to_dms_rationals(decimal)
+    deg = decimal.floor
+    rem_min = (decimal - deg) * 60.0
+    min = rem_min.floor
+    sec = ((rem_min - min) * 60.0 * 10_000).round
+    [ [ deg, 1 ], [ min, 1 ], [ sec, 10_000 ] ]
+  end
 
   def stub_external_geochemical_apis
     stub_request(:get, %r{\Ahttps://macrostrat\.org/api/v2/geologic_units/map})
@@ -255,5 +314,33 @@ class AuthenticationAndIsolationTest < ActionDispatch::IntegrationTest
         body: { type: "FeatureCollection", features: [] }.to_json,
         headers: { "Content-Type" => "application/json" }
       )
+  end
+end
+
+class AuthenticationSessionSecurityControllerTest < ActionController::TestCase
+  tests SessionsController
+
+  test "open-redirect return_to_after_authenticating falls back to root_path while preserving safe local paths across reset_session" do
+    user = User.create!(
+      name: "Redirect Potter",
+      email: "redirect@studio.example",
+      password: "safe-redirect-password-9",
+      password_confirmation: "safe-redirect-password-9"
+    )
+
+    [ "//evil.example", "/\\evil.example", "https://evil.example/steal" ].each do |malicious_target|
+      session[:return_to_after_authenticating] = malicious_target
+      post :create, params: {
+        session: { email: user.email, password: "safe-redirect-password-9" }
+      }
+      assert_redirected_to root_path
+      delete :destroy
+    end
+
+    session[:return_to_after_authenticating] = "/setup?step=4"
+    post :create, params: {
+      session: { email: user.email, password: "safe-redirect-password-9" }
+    }
+    assert_redirected_to "/setup?step=4"
   end
 end

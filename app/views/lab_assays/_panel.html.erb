@@ -128,6 +128,15 @@
           </div>
         <% end %>
 
+        <% submitted = params[:lab_assay].respond_to?(:[]) ? params[:lab_assay] : {} %>
+        <% submitted_oxides = submitted[:oxides].respond_to?(:[]) ? submitted[:oxides] : {} %>
+        <% bool_type = ActiveModel::Type::Boolean.new %>
+        <% default_source_type = current_studio_setting.has_pxrf_workflow? ? "pxrf" : "verified_lab_xrf" %>
+        <% selected_source_type = submitted[:source_type].presence || default_source_type %>
+        <% selected_privacy = submitted[:coordinate_privacy].to_s == "fuzzed_2km" ? "fuzzed_2km" : "exact" %>
+        <% promote_checked = bool_type.cast(submitted[:promote_to_reference]) || false %>
+        <% privacy_confirmed_checked = bool_type.cast(submitted[:atlas_privacy_confirmed]) || false %>
+
         <%= form_with scope: :lab_assay,
           url: sample_lab_assays_path(sample),
           method: :post,
@@ -145,7 +154,7 @@
                     [ "Verified Lab ICP-MS", "verified_lab_icpms" ],
                     [ "Handheld pXRF CSV (Bruker / Olympus / Niton)", "pxrf" ]
                   ],
-                  current_studio_setting.has_pxrf_workflow? ? "pxrf" : "verified_lab_xrf"
+                  selected_source_type
                 ),
                 {},
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
@@ -154,6 +163,7 @@
             <div>
               <%= f.label :lab_name, "Laboratory / Instrument Name", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
               <%= f.text_field :lab_name,
+                value: submitted[:lab_name],
                 placeholder: "e.g., WSU GeoAnalytical, Bruker S1 TITAN",
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
             </div>
@@ -161,6 +171,7 @@
             <div>
               <%= f.label :lab_report_ref, "Lab Report / Sample Ref", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
               <%= f.text_field :lab_report_ref,
+                value: submitted[:lab_report_ref],
                 placeholder: "e.g., WSU-2026-0412 or PEG-01",
                 class: "w-full rounded-xl border border-[#D6C7B2] bg-white px-3 py-2 font-mono text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#1E4E79]/40 focus:border-[#1E4E79]" %>
             </div>
@@ -193,6 +204,7 @@
               <div>
                 <%= f.label :dry_weight_g, "Bone-Dry Weight (g)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :dry_weight_g,
+                  value: submitted[:dry_weight_g],
                   step: "0.01",
                   min: 0,
                   placeholder: "e.g., 100.00",
@@ -202,6 +214,7 @@
               <div>
                 <%= f.label :fired_weight_g, "Fired Weight (g)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :fired_weight_g,
+                  value: submitted[:fired_weight_g],
                   step: "0.01",
                   min: 0,
                   placeholder: "e.g., 91.50",
@@ -211,6 +224,7 @@
               <div>
                 <%= f.label :measured_loi_pct, "Or Direct Measured LOI (%)", class: "block text-[11px] font-semibold text-stone-600 mb-1" %>
                 <%= f.number_field :measured_loi_pct,
+                  value: submitted[:measured_loi_pct],
                   step: "0.01",
                   min: 0,
                   max: 99.9,
@@ -242,7 +256,7 @@
                     <%= oxide %>
                   </label>
                   <%= number_field_tag "lab_assay[oxides][#{oxide}]",
-                    nil,
+                    submitted_oxides[oxide],
                     id: "lab_assay_oxides_#{oxide.downcase}",
                     step: "0.01",
                     min: 0,
@@ -253,9 +267,6 @@
               <% end %>
             </div>
           </div>
-
-          <% selected_privacy = params.dig(:lab_assay, :coordinate_privacy).to_s == "fuzzed_2km" ? "fuzzed_2km" : "exact" %>
-          <% promote_checked = ActiveModel::Type::Boolean.new.cast(params.dig(:lab_assay, :promote_to_reference)) %>
 
           <div class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-3.5 space-y-3" data-atlas-promotion-privacy>
             <input type="hidden" name="lab_assay[privacy_prompt_shown]" value="1">
@@ -321,7 +332,7 @@
               <label class="flex items-start gap-2 pt-1 cursor-pointer">
                 <%= check_box_tag "lab_assay[atlas_privacy_confirmed]",
                   "1",
-                  false,
+                  privacy_confirmed_checked,
                   id: "lab_assay_atlas_privacy_confirmed",
                   class: "mt-0.5 rounded border-[#D6C7B2] text-[#1E4E79] focus:ring-[#1E4E79]" %>
                 <span class="text-[11px] font-medium text-stone-700">

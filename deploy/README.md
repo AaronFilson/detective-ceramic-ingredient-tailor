@@ -10,9 +10,9 @@ DCI Tailor runs alongside `glazecalc` on the single Graviton `t4g.small` (2 GB R
 | `glazecalc` (prod) | `127.0.0.1:3000` | `512m` (~180 MB RSS) | Existing Node/Mongo production app |
 | `glazecalc-staging` | `127.0.0.1:3001` | `300m` (~120 MB RSS) | Existing Node staging app (`oom_score_adj: 500`) |
 | `kamal-proxy` (DCI Tailor) | `127.0.0.1:3002` (HTTP), `127.0.0.1:3443` (HTTPS) | ~30 MB | Routes both `dci-tailor.glazecalcapp.com` and `dci-tailor-staging.glazecalcapp.com` by `Host` header |
-| `dci-tailor-web` (prod) | internal `:80` (Thruster) | `512m` (~230 MB RSS) | Ruby 3.3 + `jemalloc` + Puma single-process (`WEB_CONCURRENCY=0`) + SolidQueue in Puma |
-| `dci-tailor-staging-web` | internal `:80` (Thruster) | `320m` (~185 MB RSS) | `oom-score-adj: 500`, `cpus: 0.5`, `RUBY_YJIT_ENABLE=0`, `RAILS_MAX_THREADS=2`, `JOB_THREADS=1` |
-| `dci-tailor-db` (PostGIS 16) | `127.0.0.1:5433` | `320m` (~140 MB RSS) | Shared by `dci_tailor_production` and isolated `dci_tailor_staging` (`shared_buffers=96MB`, `max_connections=25`) |
+| `dci-tailor-web` (prod) | internal `:8080` (Thruster, non-root `1000:1000`) | `512m` (~230 MB RSS) | Ruby 3.3 + `jemalloc` + Puma single-process (`WEB_CONCURRENCY=0`) + SolidQueue async in-process |
+| `dci-tailor-staging-web` | internal `:8080` (Thruster, non-root `1000:1000`) | `320m` (~185 MB RSS) | `oom-score-adj: 500`, `cpus: 0.5`, `RUBY_YJIT_ENABLE=0`, `RAILS_MAX_THREADS=2`, `JOB_THREADS=1` |
+| `dci-tailor-db` (PostGIS 16) | `127.0.0.1:5433` | `320m` (~140 MB RSS) | Superuser `postgres` for bootstrap/backups; least-privilege `dci_tailor` & `dci_tailor_staging` app roles (`shared_buffers=96MB`, `max_connections=50`) |
 
 ---
 
@@ -55,28 +55,39 @@ VOLUME_ID=$(aws ec2 describe-instances --region us-west-2 \
 
 ## Step 2: Deploy the AWS CDK Stack (`deploy/cdk`)
 
-Synthesize, test, and deploy `dci-tailor-infra` (creates private encrypted S3 bucket `dci-tailor-storage-724654236968`, scoped IAM user `dci-tailor-storage`, `/dci-tailor/storage-bucket` SSM parameter, and `dci-tailor-deploy` GitHub OIDC role):
+Synthesize, test, and deploy `dci-tailor-infra`. This provisions:
+- Production encrypted S3 bucket `dci-tailor-storage-724654236968`, SSM parameter `/dci-tailor/storage-bucket`, and scoped IAM user `dci-tailor-storage` (with an explicit `Deny` on `pgdump/*` so web containers can never read or delete database backups).
+- Dedicated staging encrypted S3 bucket `dci-tailor-staging-storage-724654236968` (14-day whole-bucket lifecycle expiration), SSM parameter `/dci-tailor/staging/storage-bucket`, and isolated IAM user `dci-tailor-staging-storage`.
+- GitHub Actions OIDC role `dci-tailor-deploy` restricted strictly to the `production` and `staging` GitHub Environments and SSH-over-SSM sessions on `app=glazecalc`.
 
 ```bash
 cd deploy/cdk
 npm install
+npm run typecheck
 npm test
 npx cdk diff
 npx cdk deploy
 ```
 
-Also grant the EC2 instance role (`glazecalc-instance`) permission to read `/dci-tailor/storage-bucket` and upload `s3://dci-tailor-storage-724654236968/pgdump/*` (or configure `/root/.aws/credentials` for `backup-postgres.sh`), and create an access key for IAM user `dci-tailor-storage` to store in SSM below.
+Also grant the EC2 instance role (`glazecalc-instance`) permission to read `/dci-tailor/storage-bucket` and upload `s3://dci-tailor-storage-724654236968/pgdump/*` (or configure `/root/.aws/credentials` for `backup-postgres.sh`), and create separate access keys for `dci-tailor-storage` (prod) and `dci-tailor-staging-storage` (staging) to store in SSM below.
 
 ---
 
 ## Step 3: Populate SSM Parameter Store Secrets
 
-Store production and staging secrets as `SecureString` parameters in `us-west-2`:
+Store production and staging secrets as `SecureString` parameters in `us-west-2`.
+
+> **Important (`SMTP_URL` encoding):** AWS SES SMTP passwords contain `/`, `+`, and `=` characters, which must be percent-encoded when embedded inside `SMTP_URL` so `URI.parse` parses the userinfo cleanly:
+> ```bash
+> ENCODED_SES_PASS=$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SES_PASS")
+> ```
 
 ```bash
 # Production (/dci-tailor/prod/*)
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
   --name /dci-tailor/prod/secret-key-base --value "$(bin/rails secret)"
+aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
+  --name /dci-tailor/prod/postgres-superuser-password --value "$(openssl rand -hex 24)"
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
   --name /dci-tailor/prod/postgres-password --value "$(openssl rand -hex 24)"
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
@@ -84,7 +95,7 @@ aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
   --name /dci-tailor/prod/aws-secret-access-key --value "<DCI_TAILOR_STORAGE_SECRET_ACCESS_KEY>"
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
-  --name /dci-tailor/prod/smtp-url --value "smtp://<SES_USER>:<SES_PASS>@email-smtp.us-west-2.amazonaws.com:587"
+  --name /dci-tailor/prod/smtp-url --value "smtp://${SES_USER}:${ENCODED_SES_PASS}@email-smtp.us-west-2.amazonaws.com:587"
 
 # Staging (/dci-tailor/staging/*)
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
@@ -92,9 +103,9 @@ aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
   --name /dci-tailor/staging/postgres-password --value "$(openssl rand -hex 24)"
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
-  --name /dci-tailor/staging/aws-access-key-id --value "<DCI_TAILOR_STORAGE_ACCESS_KEY_ID>"
+  --name /dci-tailor/staging/aws-access-key-id --value "<DCI_TAILOR_STAGING_STORAGE_ACCESS_KEY_ID>"
 aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
-  --name /dci-tailor/staging/aws-secret-access-key --value "<DCI_TAILOR_STORAGE_SECRET_ACCESS_KEY>"
+  --name /dci-tailor/staging/aws-secret-access-key --value "<DCI_TAILOR_STAGING_STORAGE_SECRET_ACCESS_KEY>"
 ```
 
 *(Optional geological API keys: `/dci-tailor/prod/mindat-api-token` and `/dci-tailor/prod/georoc-api-key`.)*
@@ -125,43 +136,37 @@ aws ssm put-parameter --region us-west-2 --type SecureString --overwrite \
 1. Copy [`deploy/ssh-ssm-config.example`](./ssh-ssm-config.example) into `~/.ssh/config` with your live `InstanceId` (`Host glazecalc-ec2`), and ensure your SSH public key is in `/home/admin/.ssh/authorized_keys` (and `admin` is in the `docker` group: `sudo usermod -aG docker admin`).
 2. Validate Kamal configs locally:
    ```bash
-   bundle exec kamal config
-   bundle exec kamal config -d staging
+   bin/kamal config
+   bin/kamal config -d staging
    ```
 3. Bootstrap `dci-tailor-db`, `kamal-proxy` (`127.0.0.1:3002`), and production `dci-tailor`:
    ```bash
-   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bundle exec kamal setup
+   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bin/kamal setup
    ```
-4. Set the `dci_tailor_staging` database role password inside `dci-tailor-db` (once):
+   *(When `dci-tailor-db` initializes its empty volume, `deploy/postgres/init-databases.sh` automatically creates the non-superuser roles `dci_tailor` and `dci_tailor_staging` with their SSM passwords `APP_DB_PASSWORD` and `STAGING_DB_PASSWORD`, creates `dci_tailor_production` and `dci_tailor_staging`, and installs PostGIS in both — no manual `ALTER ROLE` is needed.)*
+4. Deploy staging (~200 MB RAM alongside production, sharing `kamal-proxy` and `dci-tailor-db` while using its dedicated `dci-tailor-staging-storage-724654236968` S3 bucket):
    ```bash
-   STAGING_DB_PASS=$(aws ssm get-parameter --region us-west-2 --with-decryption \
-     --name /dci-tailor/staging/postgres-password --query Parameter.Value --output text)
-   ssh glazecalc-ec2 "docker exec dci-tailor-db psql -U dci_tailor -d dci_tailor_production \
-     -c \"ALTER ROLE dci_tailor_staging WITH PASSWORD '${STAGING_DB_PASS}';\""
-   ```
-5. Deploy staging (~200 MB RAM alongside production, sharing `kamal-proxy` and `dci-tailor-db`):
-   ```bash
-   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bundle exec kamal deploy -d staging
+   AWS_REGION=us-west-2 KAMAL_REGISTRY_PASSWORD="$GITHUB_TOKEN" bin/kamal deploy -d staging
    ```
    To stop staging between testing rounds and reclaim ~185 MB RAM:
    ```bash
-   AWS_REGION=us-west-2 bundle exec kamal app stop -d staging
+   AWS_REGION=us-west-2 bin/kamal app stop -d staging
    ```
 
 ---
 
 ## Step 6: Nightly PostGIS Backups & Restore
 
-1. Copy `deploy/backup-postgres.sh` to `/usr/local/bin/dci-tailor-backup-postgres.sh` (`chmod 755`) and schedule via `/etc/cron.d/dci-tailor-backup` (e.g., `25 4 * * * root /usr/local/bin/dci-tailor-backup-postgres.sh >> /var/log/dci-tailor-backup.log 2>&1`).
+1. Copy `deploy/backup-postgres.sh` to `/usr/local/bin/dci-tailor-backup-postgres.sh` (`chmod 755`) and schedule via `/etc/cron.d/dci-tailor-backup` (e.g., `25 4 * * * root /usr/local/bin/dci-tailor-backup-postgres.sh >> /var/log/dci-tailor-backup.log 2>&1`). The script acquires `/var/lock/dci-tailor-backup.lock` via `flock -n` and verifies the archive table-of-contents with `pg_restore --list` before uploading to S3.
 2. **Test a backup manually:**
    ```bash
    sudo /usr/local/bin/dci-tailor-backup-postgres.sh
    ```
-3. **Restore a custom-format dump (`pg_restore`):**
+3. **Restore a custom-format dump (`pg_restore`) with `0600` file permissions:**
    ```bash
-   aws s3 cp s3://dci-tailor-storage-724654236968/pgdump/<dump-file>.dump /tmp/restore.dump
+   (umask 077 && aws s3 cp s3://dci-tailor-storage-724654236968/pgdump/<dump-file>.dump /var/tmp/restore.dump)
    docker exec -i dci-tailor-db sh -c \
-     'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore --clean --if-exists --no-owner --no-acl -U "$POSTGRES_USER" -d dci_tailor_production' \
-     < /tmp/restore.dump
-   rm -f /tmp/restore.dump
+     'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore --clean --if-exists --no-owner --no-acl --role=dci_tailor -U "$POSTGRES_USER" -d dci_tailor_production' \
+     < /var/tmp/restore.dump
+   rm -f /var/tmp/restore.dump
    ```

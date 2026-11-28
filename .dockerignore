@@ -18,3 +18,8 @@
 .env*
 /config/master.key
 /config/credentials/*.key
+
+/deploy
+/test
+/compose.yml
+/README.md

@@ -1,5 +1,6 @@
 import { Duration, Stack, Tags, type StackProps } from 'aws-cdk-lib';
 import {
+  Effect,
   OpenIdConnectProvider,
   Policy,
   PolicyDocument,
@@ -71,6 +72,9 @@ export class DciTailorStack extends Stack {
   readonly storageBucket: Bucket;
   readonly storageUser: User;
   readonly bucketParameter: StringParameter;
+  readonly stagingStorageBucket: Bucket;
+  readonly stagingStorageUser: User;
+  readonly stagingBucketParameter: StringParameter;
   readonly deployRole: Role;
 
   constructor(scope: Construct, id: string, props: DciTailorStackProps = {}) {
@@ -79,7 +83,7 @@ export class DciTailorStack extends Stack {
     const settings = props.settings ?? readDciTailorSettings(this.node);
     const { account, region, domain, stagingDomain, repository, hostAppTagValue } = settings;
 
-    // 1. Private encrypted S3 bucket for ActiveStorage photos/variants and nightly PostGIS dumps.
+    // 1. Private encrypted S3 bucket for production ActiveStorage photos/variants and nightly PostGIS dumps.
     this.storageBucket = new Bucket(this, 'StorageBucket', {
       bucketName: `dci-tailor-storage-${account}`,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
@@ -88,18 +92,13 @@ export class DciTailorStack extends Stack {
       cors: [
         {
           allowedMethods: [HttpMethods.GET, HttpMethods.HEAD, HttpMethods.PUT, HttpMethods.POST],
-          allowedOrigins: [`https://${domain}`, `https://${stagingDomain}`],
+          allowedOrigins: [`https://${domain}`],
           allowedHeaders: ['*'],
           exposedHeaders: ['ETag'],
           maxAge: 3600
         }
       ],
       lifecycleRules: [
-        {
-          id: 'expire-staging-uploads',
-          prefix: 'staging/',
-          expiration: Duration.days(14)
-        },
         {
           id: 'expire-pgdumps',
           prefix: 'pgdump/',
@@ -112,7 +111,8 @@ export class DciTailorStack extends Stack {
       ]
     });
 
-    // 2. Least-privilege IAM user for container ActiveStorage & backup uploads (IMDSv2 hop-limit = 1).
+    // 2. Least-privilege IAM user for production container ActiveStorage (IMDSv2 hop-limit = 1),
+    //    with an explicit Deny on pgdump/* so web container credentials can never read or delete backups.
     this.storageUser = new User(this, 'StorageUser', {
       userName: 'dci-tailor-storage'
     });
@@ -127,18 +127,79 @@ export class DciTailorStack extends Stack {
           sid: 'ListStorageBucket',
           actions: ['s3:ListBucket'],
           resources: [this.storageBucket.bucketArn]
+        }),
+        new PolicyStatement({
+          sid: 'DenyPgdumpBackupAccess',
+          effect: Effect.DENY,
+          actions: ['s3:*'],
+          resources: [this.storageBucket.arnForObjects('pgdump/*')]
         })
       ]).policy
     );
 
-    // 3. SSM Parameter Store entry naming the storage/backup bucket for host backup scripts & Kamal.
+    // 3. SSM Parameter Store entry naming the production storage/backup bucket.
     this.bucketParameter = new StringParameter(this, 'StorageBucketParameter', {
       parameterName: '/dci-tailor/storage-bucket',
       stringValue: this.storageBucket.bucketName
     });
 
-    // 4. GitHub Actions OIDC deploy role referencing the account's existing GitHub OIDC provider
-    //    (created by glazecalc-access) so `cdk deploy` coexists cleanly in account 724654236968.
+    // 4. Dedicated staging S3 bucket with 14-day whole-bucket lifecycle expiration and isolated IAM user.
+    this.stagingStorageBucket = new Bucket(this, 'StagingStorageBucket', {
+      bucketName: `dci-tailor-staging-storage-${account}`,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      cors: [
+        {
+          allowedMethods: [HttpMethods.GET, HttpMethods.HEAD, HttpMethods.PUT, HttpMethods.POST],
+          allowedOrigins: [`https://${stagingDomain}`],
+          allowedHeaders: ['*'],
+          exposedHeaders: ['ETag'],
+          maxAge: 3600
+        }
+      ],
+      lifecycleRules: [
+        {
+          id: 'expire-staging-objects',
+          expiration: Duration.days(14)
+        },
+        {
+          id: 'abort-incomplete-multipart',
+          abortIncompleteMultipartUploadAfter: Duration.days(2)
+        }
+      ]
+    });
+
+    this.stagingStorageUser = new User(this, 'StagingStorageUser', {
+      userName: 'dci-tailor-staging-storage'
+    });
+    this.stagingStorageUser.attachInlinePolicy(
+      new PolicyStatementToInlinePolicy(
+        this,
+        'StagingStorageUserPolicy',
+        'dci-tailor-staging-s3-storage',
+        [
+          new PolicyStatement({
+            sid: 'ReadWriteDeleteStagingStorageObjects',
+            actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+            resources: [this.stagingStorageBucket.arnForObjects('*')]
+          }),
+          new PolicyStatement({
+            sid: 'ListStagingStorageBucket',
+            actions: ['s3:ListBucket'],
+            resources: [this.stagingStorageBucket.bucketArn]
+          })
+        ]
+      ).policy
+    );
+
+    this.stagingBucketParameter = new StringParameter(this, 'StagingStorageBucketParameter', {
+      parameterName: '/dci-tailor/staging/storage-bucket',
+      stringValue: this.stagingStorageBucket.bucketName
+    });
+
+    // 5. GitHub Actions OIDC deploy role referencing the account's existing GitHub OIDC provider
+    //    (created by glazecalc-access), restricted strictly to the production and staging GitHub Environments.
     const githubOidc = OpenIdConnectProvider.fromOpenIdConnectProviderArn(
       this,
       'GitHubOidcProvider',
@@ -149,18 +210,19 @@ export class DciTailorStack extends Stack {
       roleName: 'dci-tailor-deploy',
       assumedBy: new WebIdentityPrincipal(githubOidc.openIdConnectProviderArn, {
         StringEquals: {
-          [`${GITHUB_ISSUER}:aud`]: STS_AUDIENCE
-        },
-        StringLike: {
-          [`${GITHUB_ISSUER}:sub`]: `repo:${repository}:*`
+          [`${GITHUB_ISSUER}:aud`]: STS_AUDIENCE,
+          [`${GITHUB_ISSUER}:sub`]: [
+            `repo:${repository}:environment:production`,
+            `repo:${repository}:environment:staging`
+          ]
         }
       }),
       inlinePolicies: {
         'dci-tailor-ssm-deploy': new PolicyDocument({
           statements: [
             new PolicyStatement({
-              sid: 'SessionAndRunCommandOnHostInstance',
-              actions: ['ssm:StartSession', 'ssm:SendCommand'],
+              sid: 'StartSsmSessionOnHostInstance',
+              actions: ['ssm:StartSession'],
               resources: [`arn:aws:ec2:${region}:${account}:instance/*`],
               conditions: {
                 StringEquals: {
@@ -169,27 +231,18 @@ export class DciTailorStack extends Stack {
               }
             }),
             new PolicyStatement({
-              sid: 'AllowSsmSshAndShellDocuments',
-              actions: ['ssm:StartSession', 'ssm:SendCommand'],
-              resources: [
-                `arn:aws:ssm:${region}::document/AWS-StartSSHSession`,
-                `arn:aws:ssm:${region}::document/AWS-RunShellScript`
-              ]
+              sid: 'AllowSsmSshDocument',
+              actions: ['ssm:StartSession'],
+              resources: [`arn:aws:ssm:${region}::document/AWS-StartSSHSession`]
             }),
             new PolicyStatement({
-              sid: 'ManageSsmSessions',
+              sid: 'ManageOwnSsmSessions',
               actions: ['ssm:TerminateSession', 'ssm:ResumeSession'],
-              resources: [`arn:aws:ssm:${region}:${account}:session/*`]
+              resources: [`arn:aws:ssm:${region}:${account}:session/\${aws:userid}-*`]
             }),
             new PolicyStatement({
-              sid: 'DescribeHostInstancesAndCommandResults',
-              actions: [
-                'ec2:DescribeInstances',
-                'ssm:DescribeInstanceInformation',
-                'ssm:GetCommandInvocation',
-                'ssm:ListCommandInvocations',
-                'ssm:ListCommands'
-              ],
+              sid: 'DescribeHostInstances',
+              actions: ['ec2:DescribeInstances', 'ssm:DescribeInstanceInformation'],
               resources: ['*']
             }),
             new PolicyStatement({

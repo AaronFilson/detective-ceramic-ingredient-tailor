@@ -226,12 +226,7 @@ module Lab
         assay_result.reasoning_log = reasoning_entries
         assay_result.save!
 
-        if reference_assay.present?
-          @user_sample.assay_results
-            .where(reference_assay_id: reference_assay.id)
-            .where.not(id: assay_result.id)
-            .update_all(reference_assay_id: nil, promoted_to_reference: false)
-        end
+        sync_sample_community_reference_assays!(assay_result, reference_assay)
       end
 
       Result.new(
@@ -751,6 +746,52 @@ module Lab
       end
       ref_assay.save!
       ref_assay
+    end
+
+    def sync_sample_community_reference_assays!(assay_result, reference_assay)
+      if reference_assay.present?
+        @user_sample.assay_results
+          .where(reference_assay_id: reference_assay.id)
+          .where.not(id: assay_result.id)
+          .update_all(reference_assay_id: nil, promoted_to_reference: false)
+
+        other_ref_ids = @user_sample.assay_results
+          .where.not(reference_assay_id: [ nil, reference_assay.id ])
+          .distinct
+          .pluck(:reference_assay_id)
+
+        if other_ref_ids.any?
+          ReferenceAssay
+            .where(id: other_ref_ids)
+            .where("source LIKE 'community_verified_%'")
+            .find_each do |sibling_ref|
+              merged_meta = (sibling_ref.raw_metadata || {}).merge("coordinate_privacy" => reference_assay.coordinate_privacy)
+              sibling_ref.update!(
+                coordinate_privacy: reference_assay.coordinate_privacy,
+                location: reference_assay.location,
+                raw_metadata: merged_meta
+              )
+            end
+        end
+      elsif !@promote_to_reference
+        prior_ref_ids = @user_sample.assay_results
+          .where.not(reference_assay_id: nil)
+          .distinct
+          .pluck(:reference_assay_id)
+
+        @user_sample.assay_results
+          .where("promoted_to_reference = TRUE OR reference_assay_id IS NOT NULL")
+          .update_all(promoted_to_reference: false, reference_assay_id: nil, updated_at: Time.current)
+
+        if prior_ref_ids.any?
+          ReferenceAssay
+            .where(id: prior_ref_ids)
+            .where("source LIKE 'community_verified_%'")
+            .find_each do |prior_ref|
+              prior_ref.destroy! if AssayResult.where(reference_assay_id: prior_ref.id).none?
+            end
+        end
+      end
     end
 
     def infer_rock_type(sample)

@@ -66,13 +66,57 @@ class BlendsHelperTest < ActionView::TestCase
     end
   end
 
-  test "Media::QrSvgGenerator renders standalone inline SVG for valid URLs and empty string for blank inputs" do
+  test "simplex_svg_coordinates plots (0, 0, 0) at centroid and sanitizes NaN, Infinity, and negative inputs without raising" do
+    centroid = simplex_svg_coordinates(33.3333, 33.3333, 33.3333, width: 460, height: 400, padding: 48)
+    zero_origin = simplex_svg_coordinates(0, 0, 0, width: 460, height: 400, padding: 48)
+    nan_inf = simplex_svg_coordinates(Float::NAN, Float::INFINITY, -Float::INFINITY, width: 460, height: 400, padding: 48)
+    negatives = simplex_svg_coordinates(-25, -50, -10, width: 460, height: 400, padding: 48)
+
+    assert_in_delta centroid[:x], zero_origin[:x], 0.05
+    assert_in_delta centroid[:y], zero_origin[:y], 0.05
+    assert_equal zero_origin, nan_inf
+    assert_equal zero_origin, negatives
+
+    mixed = simplex_svg_coordinates(100, Float::NAN, -20, width: 460, height: 400, padding: 48)
+    top = simplex_svg_coordinates(100, 0, 0, width: 460, height: 400, padding: 48)
+    assert_equal top, mixed
+  end
+
+  test "simplex_candidate_batch_summary and line_blend_tile_batch_summary do not double-escape ampersands or apostrophes" do
+    sample_a = Struct.new(:title).new("Potter's Clay & Ash")
+    sample_b = Struct.new(:title).new("Feldspar — Custer")
+    candidate = Chemistry::BlendRecipeBuilder::Candidate.new(
+      weights: [
+        { sample: sample_a, percentage: 60 },
+        { sample: sample_b, percentage: 40 }
+      ]
+    )
+
+    simplex_summary = simplex_candidate_batch_summary(candidate)
+    assert_equal "60% / 40% — 60% Potter's Clay & Ash · 40% Feldspar — Custer", simplex_summary
+    refute_includes simplex_summary, "&amp;"
+    refute_includes simplex_summary, "&#39;"
+
+    line_summary = line_blend_tile_batch_summary(candidate, "T07")
+    assert_equal "T07 (60% / 40%) — 60% Potter's Clay & Ash · 40% Feldspar — Custer", line_summary
+    refute_includes line_summary, "&amp;"
+    refute_includes line_summary, "&#39;"
+  end
+
+  test "Media::QrSvgGenerator omits XML prolog, clamps module_size, and returns empty string for blank inputs" do
     svg = Media::QrSvgGenerator.call("https://example.com/samples/42")
 
     assert svg.html_safe?
-    assert_includes svg, "<svg"
+    refute_includes svg, "<?xml"
+    assert svg.lstrip.start_with?("<svg")
     assert_includes svg, "viewBox="
     assert_includes svg, "<path"
+
+    clamped_low = Media::QrSvgGenerator.call("https://example.com/samples/42", module_size: 0)
+    clamped_high = Media::QrSvgGenerator.call("https://example.com/samples/42", module_size: 999)
+    assert clamped_low.lstrip.start_with?("<svg")
+    assert clamped_high.lstrip.start_with?("<svg")
+    refute_includes clamped_low, "<?xml"
 
     assert_equal "", Media::QrSvgGenerator.call("")
     assert_equal "", Media::QrSvgGenerator.call(nil)

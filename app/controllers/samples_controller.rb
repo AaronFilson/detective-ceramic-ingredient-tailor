@@ -268,7 +268,7 @@ class SamplesController < ApplicationController
       .map do |assay|
         {
           id: assay.id,
-          external_id: assay.external_id,
+          external_id: assay.coordinate_privacy == "fuzzed_2km" ? nil : assay.external_id,
           source: assay.source,
           rock_type: assay.rock_type,
           lat: assay.latitude&.round(5),
@@ -374,7 +374,7 @@ class SamplesController < ApplicationController
       (sample.latitude.nil? && sample.longitude.nil?)
     return nil unless should_auto_pin
 
-    coords = uploaded_photos.lazy.filter_map { |photo| Media::ExifGpsExtractor.extract(photo) }.first
+    coords = uploaded_photos.lazy.filter_map { |photo| extract_photo_exif_gps(photo) }.first
     return nil unless coords
 
     sample.latitude = coords[:latitude]
@@ -384,6 +384,19 @@ class SamplesController < ApplicationController
       coords[:latitude],
       coords[:longitude]
     )
+  end
+
+  def extract_photo_exif_gps(photo)
+    if photo.is_a?(String) && !photo.b.start_with?("\xFF\xD8".b)
+      blob = ActiveStorage::Blob.find_signed(photo)
+      return nil unless blob
+
+      return blob.open { |tf| Media::ExifGpsExtractor.extract(tf) }
+    end
+
+    Media::ExifGpsExtractor.extract(photo)
+  rescue StandardError
+    nil
   end
 
   def sample_params

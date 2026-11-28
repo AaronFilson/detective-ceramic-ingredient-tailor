@@ -163,6 +163,7 @@
                   <% if focusable_set.include?(candidate) %>
                     tabindex="0"
                     role="button"
+                    aria-pressed="<%= is_opt %>"
                     aria-label="<%= "#{batch_str}, #{candidate.stull_zone}, Fit #{fit_str}" %>"
                   <% end %>
                   cx="<%= pt[:x] %>"
@@ -172,7 +173,7 @@
                   fill-opacity="<%= opacity %>"
                   stroke="<%= is_opt ? '#FDE68A' : palette[:stroke] %>"
                   stroke-width="<%= is_opt ? '2.2' : '0.9' %>"
-                  class="cursor-pointer focus:outline-none"
+                  class="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E4E79]"
                 >
                   <title><%= "#{batch_str} | #{candidate.stull_zone} | SiO2 #{format('%.2f', candidate.sio2)}, Al2O3 #{format('%.2f', candidate.al2o3)}, Si:Al #{si_al_str} | COE #{coe_str} | Fit #{fit_str}" %></title>
                 </circle>
@@ -325,6 +326,7 @@
     <% else %>
       <%# 11-Tile Ceramic Line-Blend Test Bar (0/100 -> 100/0) %>
       <% mat_a, mat_b = blend_result.samples %>
+      <% optimal_tile_code = format("T%02d", (blend_result.candidates.index(optimal) || 0) + 1) %>
       <div class="space-y-4" data-line-blend-strip>
         <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-stone-700">
           <span>0% <%= truncate(mat_a.title.to_s, length: 28) %> / 100% <%= truncate(mat_b.title.to_s, length: 28) %></span>
@@ -336,7 +338,7 @@
             <% tile_code = format("T%02d", idx + 1) %>
             <% is_opt = candidate == optimal %>
             <% palette = stull_zone_svg_palette(candidate.stull_zone) %>
-            <% batch_str = "#{tile_code} (#{candidate.batch_label}) — #{simplex_candidate_batch_summary(candidate).split(' — ').last}" %>
+            <% batch_str = line_blend_tile_batch_summary(candidate, tile_code) %>
             <% si_al_str = candidate.si_al_ratio.present? ? format("%.2f", candidate.si_al_ratio) : "—" %>
             <% coe_str = candidate.coe.present? ? format("%.1f", candidate.coe) : "—" %>
             <% coe_risk_str = candidate.coe_report&.risk_label || "Unrated" %>
@@ -357,15 +359,15 @@
               data-coe-risk="<%= coe_risk_str %>"
               data-zone="<%= candidate.stull_zone %>"
               data-fit="<%= fit_str %>"
-              data-action="mouseenter->simplex-map#selectCandidate focus->simplex-map#selectCandidate click->simplex-map#selectCandidate"
+              data-action="mouseenter->simplex-map#selectCandidate focus->simplex-map#selectCandidate click->simplex-map#selectCandidate keydown->simplex-map#handleKeydown"
               aria-pressed="<%= is_opt %>"
-              class="rounded-xl border border-[#D6C7B2] bg-white p-2.5 text-left flex flex-col justify-between gap-2 transition-all cursor-pointer hover:border-stone-500 focus:outline-none <%= is_opt ? 'ring-2 ring-[#B84A27] ring-offset-1' : '' %>"
+              class="rounded-xl border border-[#D6C7B2] bg-white p-2.5 text-left flex flex-col justify-between gap-2 transition-all cursor-pointer hover:border-stone-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E4E79] <%= is_opt ? 'ring-2 ring-[#B84A27] ring-offset-1' : '' %>"
             >
               <div class="space-y-1.5 w-full">
                 <div class="flex items-center justify-between gap-1">
                   <span class="font-mono text-[11px] font-bold text-stone-900"><%= tile_code %></span>
                   <% if is_opt %>
-                    <span class="px-1 py-0.2 rounded text-[8px] font-bold uppercase tracking-wider bg-[#B84A27] text-white">
+                    <span class="px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[#B84A27] text-white">
                       Best
                     </span>
                   <% end %>
@@ -430,7 +432,7 @@
               data-simplex-map-target="batch"
               class="font-mono text-xs font-bold text-stone-900"
             >
-              <%= simplex_candidate_batch_summary(optimal) %>
+              <%= line_blend_tile_batch_summary(optimal, optimal_tile_code) %>
             </div>
 
             <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E8DFD0] font-mono text-xs text-stone-800 tabular-nums">

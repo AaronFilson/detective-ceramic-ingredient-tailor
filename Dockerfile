@@ -20,6 +20,8 @@ RUN apt-get update -qq && \
       postgresql-client && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
+RUN gem install bundler -v 4.1.1 --no-document
+
 # Local development stage used by `docker compose up` (compose.yml target: development).
 FROM base AS development
 
@@ -83,7 +85,8 @@ ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \
     BUNDLE_WITHOUT="development:test" \
-    MALLOC_ARENA_MAX="2"
+    MALLOC_ARENA_MAX="2" \
+    HTTP_PORT="8080"
 
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
@@ -98,5 +101,5 @@ USER 1000:1000
 
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
-EXPOSE 80
+EXPOSE 8080
 CMD ["./bin/thrust", "./bin/rails", "server"]

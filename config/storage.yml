@@ -10,6 +10,8 @@ local:
 # Uses scoped IAM credentials from SSM / .kamal/secrets when AWS_ACCESS_KEY_ID is set
 # (required when EC2 IMDSv2 httpPutResponseHopLimit=1 blocks container metadata access),
 # falling back cleanly to IAM instance/task roles otherwise.
+# Encryption at rest is enforced automatically by the S3 bucket's default SSE-S3 (S3_MANAGED)
+# configuration so browser direct-upload PUTs do not require x-amz-server-side-encryption headers.
 amazon:
   service: S3
   region: <%= ENV.fetch("AWS_REGION", "us-west-2") %>
@@ -19,5 +21,3 @@ amazon:
   secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
 <% end %>
   public: false
-  upload:
-    server_side_encryption: AES256

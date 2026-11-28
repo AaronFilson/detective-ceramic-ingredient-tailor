@@ -26,6 +26,31 @@ export default class extends Controller {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
       this.selectCandidate(event)
+      return
+    }
+
+    if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(event.key)) {
+      const el = event.currentTarget
+      if (!el) return
+
+      const selector = el.hasAttribute("data-line-tile")
+        ? "[data-line-tile]"
+        : '[data-simplex-point][role="button"]'
+      const items = Array.from(this.element.querySelectorAll(selector))
+      if (items.length === 0) return
+
+      const currentIndex = items.indexOf(el)
+      if (currentIndex === -1) return
+
+      event.preventDefault()
+      const step = (event.key === "ArrowRight" || event.key === "ArrowDown") ? 1 : -1
+      const nextIndex = (currentIndex + step + items.length) % items.length
+      const nextEl = items[nextIndex]
+
+      if (typeof nextEl.focus === "function") {
+        nextEl.focus()
+      }
+      this.applyCandidateFromElement(nextEl)
     }
   }
 
@@ -101,6 +126,10 @@ export default class extends Controller {
         node.removeAttribute("data-selected")
       })
       el.setAttribute("data-selected", "true")
+
+      this.element.querySelectorAll('[data-simplex-point][role="button"]').forEach((node) => {
+        node.setAttribute("aria-pressed", node === el ? "true" : "false")
+      })
     }
 
     if (el.hasAttribute("data-line-tile")) {

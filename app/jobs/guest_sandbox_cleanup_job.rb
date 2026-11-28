@@ -10,12 +10,14 @@ class GuestSandboxCleanupJob < ApplicationJob
     cutoff = GUEST_RETENTION.ago
     blob_cutoff = UNATTACHED_BLOB_RETENTION.ago
 
-    pruned_samples = UserSample
+    pruned_samples = 0
+    UserSample
       .where(user_id: nil)
       .where.not(guest_token: nil)
       .where("updated_at < ?", cutoff)
-      .destroy_all
-      .size
+      .find_each(batch_size: 200) do |sample|
+        pruned_samples += 1 if sample.destroy
+      end
 
     pruned_settings = StudioSetting
       .where(user_id: nil)

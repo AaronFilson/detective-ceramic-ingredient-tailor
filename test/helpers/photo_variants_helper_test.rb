@@ -6,12 +6,32 @@ require "stringio"
 class PhotoVariantsHelperTest < ActionView::TestCase
   MINIMAL_JPEG_BYTES = "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9".b
 
-  test "returns nil when attachment is nil or unattached" do
+  test "returns nil when attachment is nil, unattached, or attached to an unpersisted record" do
     sample = UserSample.new(title: "Unattached Sample", material_category: :wild_clay)
     obs = sample.field_observations.build
 
     assert_nil stripped_photo_url(nil)
     assert_nil stripped_photo_url(obs.raw_tile_photo)
+
+    sample.outcrop_photos.attach(
+      io: StringIO.new(MINIMAL_JPEG_BYTES),
+      filename: "unpersisted_outcrop.jpg",
+      content_type: "image/jpeg"
+    )
+    assert_nothing_raised do
+      assert_nil stripped_photo_url(sample.outcrop_photos.first)
+    end
+
+    persisted_sample = UserSample.create!(title: "Persisted Parent", material_category: :wild_clay)
+    unpersisted_obs = persisted_sample.field_observations.build(vinegar_fizz: :none)
+    unpersisted_obs.raw_tile_photo.attach(
+      io: StringIO.new(MINIMAL_JPEG_BYTES),
+      filename: "unpersisted_tile.jpg",
+      content_type: "image/jpeg"
+    )
+    assert_nothing_raised do
+      assert_nil stripped_photo_url(unpersisted_obs.raw_tile_photo)
+    end
   end
 
   test "returns EXIF-stripped representation URL when strip_variants is enabled" do
@@ -65,5 +85,22 @@ class PhotoVariantsHelperTest < ActionView::TestCase
 
     photo.define_singleton_method(:variant) { |**_opts| raise LoadError, "vips missing" }
     assert_equal expected_blob_url, stripped_photo_url(photo, strip_variants: true)
+  end
+
+  test "fails closed to nil in production when strip_variants raises an error" do
+    sample = UserSample.create!(title: "Prod Safe Sample", material_category: :wild_clay)
+    sample.outcrop_photos.attach(
+      io: StringIO.new(MINIMAL_JPEG_BYTES),
+      filename: "prod_gps.jpg",
+      content_type: "image/jpeg"
+    )
+    photo = sample.outcrop_photos.first
+    photo.define_singleton_method(:variant) { |**_opts| raise LoadError, "vips unavailable" }
+
+    original_env = Rails.instance_variable_get(:@_env)
+    Rails.env = "production"
+    assert_nil stripped_photo_url(photo, strip_variants: true)
+  ensure
+    Rails.instance_variable_set(:@_env, original_env)
   end
 end

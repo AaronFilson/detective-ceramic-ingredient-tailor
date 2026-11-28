@@ -8,6 +8,7 @@ class ApiToken < ApplicationRecord
   belongs_to :user
 
   validates :name, :token_prefix, :token_digest, presence: true
+  validates :name, length: { maximum: 100 }
   validates :token_digest, uniqueness: true
 
   scope :active, -> { where(revoked_at: nil) }
@@ -29,9 +30,11 @@ class ApiToken < ApplicationRecord
 
     digest = Digest::SHA256.hexdigest(cleaned)
     token = active.includes(:user).find_by(token_digest: digest)
-    return nil unless token
+    return nil unless token && ActiveSupport::SecurityUtils.secure_compare(token.token_digest, digest)
 
-    token.update_column(:last_used_at, Time.current)
+    if token.last_used_at.nil? || token.last_used_at < 1.minute.ago
+      token.update_column(:last_used_at, Time.current)
+    end
     token
   end
 

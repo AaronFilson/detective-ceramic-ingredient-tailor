@@ -88,42 +88,55 @@ class StudioSetting < ApplicationRecord
     if Current.user.present? || Current.guest_token.present?
       for_context(user: Current.user, guest_token: Current.guest_token)
     else
-      where(user_id: nil, guest_token: nil).order(:id).first || order(:id).first || create!
+      where(user_id: nil, guest_token: nil).order(:id).first ||
+        where(user_id: nil).order(:id).first ||
+        create!
     end
   end
 
   def self.for_context(user:, guest_token:)
     if user.present?
-      find_or_create_by!(user_id: user.id)
+      find_by(user_id: user.id) || create_or_find_by!(user_id: user.id)
     elsif guest_token.present?
       existing = find_by(guest_token: guest_token)
       return existing if existing
 
       unclaimed = where(user_id: nil, guest_token: nil).order(:id).first
       if unclaimed
-        unclaimed.update_column(:guest_token, guest_token)
-        unclaimed
-      else
-        create!(guest_token: guest_token)
+        claimed = where(id: unclaimed.id, user_id: nil, guest_token: nil).update_all(
+          guest_token: guest_token,
+          updated_at: Time.current
+        )
+        return unclaimed.reload if claimed == 1
       end
+
+      create!(guest_token: guest_token)
     else
-      where(user_id: nil, guest_token: nil).order(:id).first || create!
+      where(user_id: nil, guest_token: nil).order(:id).first ||
+        where(user_id: nil).order(:id).first ||
+        create!
     end
+  rescue ActiveRecord::RecordNotUnique
+    user.present? ? find_by!(user_id: user.id) : find_by!(guest_token: guest_token)
   end
 
   def self.claim_guest!(guest_token:, user:)
     return nil if guest_token.blank? || user.blank?
 
-    guest_setting = find_by(user_id: nil, guest_token: guest_token)
-    return user.studio_setting if guest_setting.nil?
-
-    if exists?(user_id: user.id)
-      guest_setting.destroy
-      find_by(user_id: user.id)
-    else
-      guest_setting.update!(user: user, guest_token: nil)
-      guest_setting
+    existing_user_setting = find_by(user_id: user.id)
+    if existing_user_setting
+      where(user_id: nil, guest_token: guest_token).delete_all
+      return existing_user_setting
     end
+
+    guest_setting = find_by(user_id: nil, guest_token: guest_token)
+    return nil if guest_setting.nil?
+
+    guest_setting.update!(user: user, guest_token: nil)
+    guest_setting
+  rescue ActiveRecord::RecordNotUnique
+    where(user_id: nil, guest_token: guest_token).delete_all
+    find_by(user_id: user.id)
   end
 
   def onboarding_needed?

@@ -16,7 +16,7 @@ servers:
 proxy:
   ssl: false
   host: dci-tailor-staging.glazecalcapp.com
-  app_port: 80
+  app_port: 8080
   forward_headers: true
 
 logging:

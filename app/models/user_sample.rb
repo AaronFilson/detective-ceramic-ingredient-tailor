@@ -28,6 +28,8 @@ class UserSample < ApplicationRecord
   scope :for_owner, ->(user:, guest_token:) {
     if user.present?
       where(user_id: user.id)
+    elsif Rails.env.production? || ENV["REQUIRE_API_AUTH"] == "1"
+      guest_token.present? ? where(user_id: nil, guest_token: guest_token) : none
     elsif guest_token.present?
       where(user_id: nil, guest_token: [ guest_token, nil ])
     else

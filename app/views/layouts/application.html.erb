@@ -25,9 +25,6 @@
     <%# Includes compiled Tailwind + application stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
-    <% if ENV["ACTIVE_STORAGE_SERVICE"] == "amazon" %>
-      <%= javascript_include_tag "activestorage", "data-turbo-track": "reload", defer: true %>
-    <% end %>
   </head>
 
   <body class="min-h-screen lg:h-screen lg:overflow-hidden bg-[#F5F0E6] text-stone-900 antialiased flex flex-col selection:bg-[#B84A27]/20 selection:text-stone-900">

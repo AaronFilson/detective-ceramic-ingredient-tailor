@@ -12,7 +12,7 @@ module Media
 
     def initialize(url, module_size: 3)
       @url = url.to_s.strip
-      @module_size = module_size
+      @module_size = module_size.to_i.clamp(1, 20)
     end
 
     def call
@@ -24,8 +24,9 @@ module Media
         use_path: true,
         viewbox: true
       )
-      svg.html_safe
-    rescue StandardError
+      svg.sub(/\A<\?xml[^>]*\?>\s*/, "").html_safe
+    rescue StandardError => e
+      Rails.logger.warn("[Media::QrSvgGenerator] QR SVG generation failed (#{e.class}): #{e.message}")
       "".html_safe
     end
   end

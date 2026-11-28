@@ -10,9 +10,9 @@ class SessionsController < ApplicationController
 
   def create
     creds = session_params
-    user = User.find_by(email: creds[:email].to_s.strip.downcase)
+    user = User.authenticate_by(email: creds[:email].to_s, password: creds[:password].to_s)
 
-    if user&.password_digest.present? && user.authenticate(creds[:password].to_s)
+    if user
       claimed = start_new_session_for(user)
       notice = if claimed.positive?
         "Welcome! Claimed #{claimed} guest studio #{'sample'.pluralize(claimed)} into your account."

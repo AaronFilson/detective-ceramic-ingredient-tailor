@@ -217,7 +217,7 @@
         <% @test_cup_candidates.each_with_index do |candidate, idx| %>
           <% tile_code = format("T%02d", idx + 1) %>
           <% is_opt = candidate == optimal %>
-          <% cup_weights = candidate.weights.map { |w| "#{w[:percentage]}g #{truncate(w[:sample].title.to_s, length: 16)}" }.join(" + ") %>
+          <% cup_weights = candidate.weights.map { |w| "#{w[:percentage]}g #{w[:sample].title.to_s.truncate(16)}" }.join(" + ") %>
           <tr class="<%= is_opt ? 'bg-stone-100 font-semibold' : '' %>">
             <td class="py-1.5 px-2 font-mono font-bold border-r border-stone-400 whitespace-nowrap">
               <%= tile_code %><%= is_opt ? " *" : "" %>

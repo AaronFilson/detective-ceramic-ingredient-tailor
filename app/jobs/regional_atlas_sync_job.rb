@@ -13,6 +13,15 @@ class RegionalAtlasSyncJob < ApplicationJob
   KM_PER_DEGREE_LAT = 111.32
   GEOROC_LIMIT = 100
   GEOROC_MAX_PAGES = 2
+  TILE_DEDUPE_TTL = 15.minutes
+
+  def self.tile_cache_key(lat:, lng:, radius_km: DEFAULT_RADIUS_KM)
+    norm_lat = Float(lat)
+    norm_lng = Float(lng)
+    norm_radius = Float(radius_km).clamp(MIN_RADIUS_KM, MAX_RADIUS_KM)
+    radius_token = norm_radius == norm_radius.to_i ? norm_radius.to_i : norm_radius.round(1)
+    "regional_sync:tile:#{(norm_lat * 2).round}:#{(norm_lng * 2).round}:#{radius_token}"
+  end
 
   def perform(studio_setting_id = nil, lat: nil, lng: nil, radius_km: DEFAULT_RADIUS_KM)
     setting = resolve_setting(studio_setting_id)
@@ -64,6 +73,12 @@ class RegionalAtlasSyncJob < ApplicationJob
       regional_sync_status: "synced",
       regional_synced_at: Time.current,
       regional_sync_summary: summary
+    )
+
+    Rails.cache.write(
+      self.class.tile_cache_key(lat: effective_lat, lng: effective_lng, radius_km: effective_radius_km),
+      Time.current.iso8601,
+      expires_in: TILE_DEDUPE_TTL
     )
 
     {

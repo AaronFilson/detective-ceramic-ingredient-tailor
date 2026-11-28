@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "digest"
+require "openssl"
 
 class ReferenceAssay < ApplicationRecord
   include Geolocatable
@@ -22,7 +22,11 @@ class ReferenceAssay < ApplicationRecord
     lng_f = Float(lng)
 
     if seed_key.present?
-      digest = Digest::SHA256.hexdigest(seed_key.to_s)
+      digest = OpenSSL::HMAC.hexdigest(
+        "SHA256",
+        "#{Rails.application.secret_key_base}:atlas-coordinate-fuzz:v1",
+        seed_key.to_s
+      )
       u_dist = digest[0, 8].to_i(16) / 4_294_967_295.0
       u_bearing = digest[8, 8].to_i(16) / 4_294_967_295.0
     else

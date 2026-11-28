@@ -19,6 +19,13 @@ class GuestSandboxCleanupJobTest < ActiveJob::TestCase
     stale_obs = stale_guest_sample.field_observations.create!(vinegar_fizz: :slight, raw_color: "Buff")
     stale_guest_sample.update_columns(created_at: 35.days.ago, updated_at: 35.days.ago)
 
+    stale_guest_sample_two = UserSample.create!(
+      title: "Abandoned Shale Bank",
+      material_category: :crushed_rock,
+      guest_token: "guest-stale-sample-2"
+    )
+    stale_guest_sample_two.update_columns(created_at: 40.days.ago, updated_at: 40.days.ago)
+
     recent_guest_sample = UserSample.create!(
       title: "Active Guest Clay",
       material_category: :wild_clay,
@@ -61,11 +68,12 @@ class GuestSandboxCleanupJobTest < ActiveJob::TestCase
       stats = GuestSandboxCleanupJob.perform_now
     end
 
-    assert_equal 1, stats[:pruned_samples]
+    assert_equal 2, stats[:pruned_samples]
     assert_equal 1, stats[:pruned_settings]
     assert_operator stats[:purged_blobs], :>=, 1
 
     assert_nil UserSample.find_by(id: stale_guest_sample.id)
+    assert_nil UserSample.find_by(id: stale_guest_sample_two.id)
     assert_nil FieldObservation.find_by(id: stale_obs.id)
     assert_not_nil UserSample.find_by(id: recent_guest_sample.id)
     assert_not_nil UserSample.find_by(id: signed_in_old_sample.id)
@@ -81,11 +89,27 @@ end
 class RegionalSyncTileDedupeTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
-  test "POST /regional_sync deduplicates nearby requests within the same geographic tile" do
+  test "POST /regional_sync deduplicates nearby requests only after RegionalAtlasSyncJob succeeds" do
     original_cache = Rails.cache
     original_env = ENV["TEST_SYNC_DEDUPE"]
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
     ENV["TEST_SYNC_DEDUPE"] = "1"
+
+    stub_request(:get, "https://mrdata.usgs.gov/services/mrds")
+      .with(query: hash_including("service" => "WFS", "typeName" => "mrds-high"))
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: { type: "FeatureCollection", features: [] }.to_json
+      )
+    stub_request(:get, %r{\Ahttps://www\.sciencebase\.gov/catalog/items})
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: { items: [] }.to_json
+      )
+
+    tile_key = RegionalAtlasSyncJob.tile_cache_key(lat: 47.2529, lng: -122.4443, radius_km: 150)
 
     assert_enqueued_with(job: RegionalAtlasSyncJob) do
       post regional_sync_path,
@@ -95,6 +119,10 @@ class RegionalSyncTileDedupeTest < ActionDispatch::IntegrationTest
     assert_response :accepted
     assert_equal false, response.parsed_body["deduped"]
     assert_equal "queued", response.parsed_body["status"]
+    assert_not Rails.cache.exist?(tile_key), "Controller must not populate tile cache before sync job finishes"
+
+    perform_enqueued_jobs(only: RegionalAtlasSyncJob)
+    assert Rails.cache.exist?(tile_key), "Successful sync job must populate tile dedupe cache"
 
     # Nearby coordinate in Tacoma (rounds to the same 0.5-degree tile & 150 km radius)
     assert_no_enqueued_jobs(only: RegionalAtlasSyncJob) do
@@ -115,6 +143,7 @@ class RegionalSyncTileDedupeTest < ActionDispatch::IntegrationTest
     assert_response :accepted
     assert_equal false, response.parsed_body["deduped"]
   ensure
+    WebMock.reset!
     Rails.cache = original_cache
     if original_env.nil?
       ENV.delete("TEST_SYNC_DEDUPE")

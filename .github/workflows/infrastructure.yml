@@ -45,6 +45,6 @@ jobs:
       - name: Synthesize CloudFormation template
         run: npx --no-install cdk synth --quiet
 
-      - name: Validate backup shell script syntax
+      - name: Validate deploy shell script syntax
         working-directory: .
-        run: bash -n deploy/backup-postgres.sh
+        run: bash -n deploy/backup-postgres.sh deploy/postgres/init-databases.sh

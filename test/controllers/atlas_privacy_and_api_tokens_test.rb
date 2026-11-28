@@ -96,7 +96,14 @@ class AtlasPrivacyAndApiTokensTest < ActionDispatch::IntegrationTest
     assert_in_delta 47.2529, exact_ref.latitude, 0.0001
     assert_in_delta(-122.4443, exact_ref.longitude, 0.0001)
 
-    # 2. Fuzzed ~2 km promotion on Lab XRF updates ReferenceAssay to deterministic ~2 km offset
+    get sample_path(@sample_a)
+    assert_response :success
+    exact_pins = JSON.parse(css_select("[data-map-picker-reference-assays-value]").first["data-map-picker-reference-assays-value"])
+    exact_pin = exact_pins.find { |p| p["id"] == exact_ref.id }
+    assert_not_nil exact_pin
+    assert_equal exact_ref.external_id, exact_pin["external_id"]
+
+    # 2. Fuzzed ~2 km promotion on Lab XRF updates ReferenceAssay to deterministic ~2 km offset and omits external_id
     post sample_lab_assays_path(@sample_a),
       params: {
         lab_assay: {
@@ -120,6 +127,13 @@ class AtlasPrivacyAndApiTokensTest < ActionDispatch::IntegrationTest
 
     offset_km = haversine_km(47.2529, -122.4443, fuzzed_ref.latitude, fuzzed_ref.longitude)
     assert offset_km.between?(1.5, 2.5), "Expected fuzzed XRF ReferenceAssay distance #{offset_km.round(3)} km in 1.5..2.5 km"
+
+    get sample_path(@sample_a)
+    assert_response :success
+    fuzzed_pins = JSON.parse(css_select("[data-map-picker-reference-assays-value]").first["data-map-picker-reference-assays-value"])
+    fuzzed_pin = fuzzed_pins.find { |p| p["id"] == fuzzed_ref.id }
+    assert_not_nil fuzzed_pin
+    assert_nil fuzzed_pin["external_id"], "fuzzed_2km map payload must never expose internal sample external_id"
 
     # Private UserSample coordinates remain exact
     assert_in_delta 47.2529, @sample_a.reload.latitude, 0.0001
@@ -242,6 +256,139 @@ class AtlasPrivacyAndApiTokensTest < ActionDispatch::IntegrationTest
     get "/api/v1/materials", headers: { "Authorization" => "Bearer #{plaintext_token}" }
     assert_response :unauthorized
     assert_equal "Invalid or revoked API token", JSON.parse(response.body)["error"]
+  end
+
+  test "cross-method privacy sync updates prior pXRF pin to fuzzed_2km, unpublish removes pins, and sample deletion cleans up ReferenceAssays" do
+    sign_in_as(@user_b, "atlas-password-12")
+
+    pxrf_csv = "Sample,Si (%),Al (%),Fe (%),Ca (%),K (%),Rb (ppm)\nPEG-PXRF,31.2,8.9,1.1,0.8,4.2,340\n"
+    tempfile = Tempfile.new([ "peg_pxrf", ".csv" ])
+    tempfile.write(pxrf_csv)
+    tempfile.rewind
+    uploaded = Rack::Test::UploadedFile.new(tempfile.path, "text/csv", original_filename: "peg_pxrf.csv")
+
+    # 1. Promote handheld pXRF as exact GPS
+    assert_difference -> { ReferenceAssay.count }, 1 do
+      post sample_lab_assays_path(@sample_b),
+        params: {
+          lab_assay: {
+            source_type: "pxrf",
+            measured_loi_pct: "1.2",
+            promote_to_reference: "1",
+            privacy_prompt_shown: "1",
+            coordinate_privacy: "exact",
+            atlas_privacy_confirmed: "1",
+            csv_file: uploaded
+          }
+        }
+    end
+    assert_redirected_to sample_path(@sample_b)
+
+    pxrf_ref = @sample_b.reload.latest_assay_result.reference_assay
+    assert_equal "exact", pxrf_ref.coordinate_privacy
+    assert_in_delta 47.5580, pxrf_ref.latitude, 0.0001
+    assert_in_delta(-117.0780, pxrf_ref.longitude, 0.0001)
+
+    # 2. Promote Lab XRF as fuzzed_2km -> updates the existing pXRF ReferenceAssay to fuzzed_2km too!
+    assert_difference -> { ReferenceAssay.count }, 1 do
+      post sample_lab_assays_path(@sample_b),
+        params: {
+          lab_assay: {
+            source_type: "verified_lab_xrf",
+            lab_name: "Actlabs",
+            promote_to_reference: "1",
+            privacy_prompt_shown: "1",
+            coordinate_privacy: "fuzzed_2km",
+            atlas_privacy_confirmed: "1",
+            oxides: { "SiO2" => "66.5", "Al2O3" => "18.8", "Fe2O3" => "1.2", "CaO" => "1.0", "K2O" => "11.0", "LOI" => "1.5" }
+          }
+        }
+    end
+    assert_redirected_to sample_path(@sample_b)
+
+    xrf_ref = @sample_b.reload.latest_verified_lab_assay.reference_assay
+    pxrf_ref.reload
+    assert_equal "fuzzed_2km", xrf_ref.coordinate_privacy
+    assert_equal "fuzzed_2km", pxrf_ref.coordinate_privacy
+    assert_equal "fuzzed_2km", pxrf_ref.raw_metadata["coordinate_privacy"]
+    assert_equal [ xrf_ref.latitude, xrf_ref.longitude ], [ pxrf_ref.latitude, pxrf_ref.longitude ]
+
+    # 3. Deleting the UserSample destroys all promoted community_verified_* ReferenceAssays
+    ref_ids = [ pxrf_ref.id, xrf_ref.id ]
+    assert_difference -> { ReferenceAssay.count }, -2 do
+      delete sample_path(@sample_b)
+    end
+    assert_redirected_to root_path
+    assert_empty ReferenceAssay.where(id: ref_ids)
+
+    # 4. Unchecking promote_to_reference on a new assay unpublishes prior community pins on @sample_a
+    delete session_path
+    sign_in_as(@user_a, "atlas-password-10")
+    post sample_lab_assays_path(@sample_a),
+      params: {
+        lab_assay: {
+          source_type: "verified_lab_xrf",
+          promote_to_reference: "1",
+          privacy_prompt_shown: "1",
+          coordinate_privacy: "fuzzed_2km",
+          atlas_privacy_confirmed: "1",
+          oxides: { "SiO2" => "61.0", "Al2O3" => "19.0", "Fe2O3" => "5.0", "CaO" => "2.0", "K2O" => "3.0", "LOI" => "10.0" }
+        }
+      }
+    prior_ref_id = @sample_a.reload.latest_verified_lab_assay.reference_assay_id
+    assert_not_nil prior_ref_id
+
+    assert_difference -> { ReferenceAssay.count }, -1 do
+      post sample_lab_assays_path(@sample_a),
+        params: {
+          lab_assay: {
+            source_type: "verified_lab_icpms",
+            promote_to_reference: "0",
+            oxides: { "SiO2" => "61.5", "Al2O3" => "18.5", "Fe2O3" => "5.0", "CaO" => "2.0", "K2O" => "3.0", "LOI" => "10.0" }
+          }
+        }
+    end
+    assert_nil ReferenceAssay.find_by(id: prior_ref_id)
+    assert_not @sample_a.assay_results.reload.any?(&:promoted_to_reference?)
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  test "posting scalar String csv_file path to LabAssaysController#create is ignored cleanly and 422 re-render preserves form fields" do
+    sign_in_as(@user_a, "atlas-password-10")
+
+    assert_no_difference [ "AssayResult.count", "ReferenceAssay.count" ] do
+      post sample_lab_assays_path(@sample_a),
+        params: {
+          lab_assay: {
+            source_type: "verified_lab_xrf",
+            lab_name: "WSU Retained Name",
+            lab_report_ref: "WSU-KEEP-42",
+            csv_file: "/etc/hosts"
+          }
+        },
+        headers: { "Accept" => "text/vnd.turbo-stream.html" }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Provide a lab report CSV file or enter oxide weight percentages."
+    assert_includes response.body, "WSU Retained Name"
+    assert_includes response.body, "WSU-KEEP-42"
+
+    assert_no_difference -> { AssayResult.count } do
+      post sample_lab_assays_path(@sample_a),
+        params: {
+          lab_assay: {
+            source_type: "pxrf",
+            csv_file: "/etc/hosts"
+          }
+        },
+        headers: { "Accept" => "text/vnd.turbo-stream.html" }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Provide a handheld pXRF CSV or TSV file"
   end
 
   private

@@ -70,24 +70,21 @@ module BlendsHelper
   def simplex_svg_coordinates(pct_a, pct_b, pct_c, width: 460, height: 400, padding: 48)
     geom = simplex_geometry(width: width, height: height, padding: padding)
 
-    raw_a = [ pct_a.to_f, 0.0 ].max
-    raw_b = [ pct_b.to_f, 0.0 ].max
-    raw_c = [ pct_c.to_f, 0.0 ].max
+    raw_a = sanitize_simplex_component(pct_a)
+    raw_b = sanitize_simplex_component(pct_b)
+    raw_c = sanitize_simplex_component(pct_c)
     total = raw_a + raw_b + raw_c
 
-    if total.positive?
+    if total.finite? && total.positive?
       a = raw_a / total
-      b = raw_b / total
       c = raw_c / total
     else
-      a = 0.0
-      b = 0.0
-      c = 0.0
+      a = 1.0 / 3.0
+      c = 1.0 / 3.0
     end
 
-    basis_sum = a + b + c
-    x = (geom[:left_x] * basis_sum) + (geom[:side] * (c + (0.5 * a)))
-    y = (geom[:bottom_y] * basis_sum) - (geom[:tri_height] * a)
+    x = geom[:left_x] + (geom[:side] * (c + (0.5 * a)))
+    y = geom[:bottom_y] - (geom[:tri_height] * a)
 
     { x: x.round(2), y: y.round(2) }
   end
@@ -127,13 +124,11 @@ module BlendsHelper
   end
 
   def simplex_candidate_batch_summary(candidate)
-    named = candidate.weights.filter_map do |entry|
-      pct = entry[:percentage].to_i
-      next unless pct.positive?
+    "#{candidate.batch_label} — #{candidate_named_weights_summary(candidate)}"
+  end
 
-      "#{pct}% #{truncate(entry[:sample].title.to_s, length: 24)}"
-    end
-    "#{candidate.batch_label} — #{named.join(' · ')}"
+  def line_blend_tile_batch_summary(candidate, tile_code)
+    "#{tile_code} (#{candidate.batch_label}) — #{candidate_named_weights_summary(candidate)}"
   end
 
   def simplex_candidate_umf_summary(candidate)
@@ -154,5 +149,21 @@ module BlendsHelper
 
     risk = candidate.coe_report&.risk_label || "Unrated"
     "#{format('%.1f', candidate.coe)} ×10⁻⁷ /°C (#{risk})"
+  end
+
+  private
+
+  def sanitize_simplex_component(val)
+    num = val.to_f
+    num.finite? && num.positive? ? num : 0.0
+  end
+
+  def candidate_named_weights_summary(candidate)
+    candidate.weights.filter_map do |entry|
+      pct = entry[:percentage].to_i
+      next unless pct.positive?
+
+      "#{pct}% #{entry[:sample].title.to_s.truncate(24)}"
+    end.join(" · ")
   end
 end

@@ -178,7 +178,7 @@ class PrintSheetsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-line-blend-strip] [data-line-tile='T11']", count: 1
   end
 
-  test "print endpoints enforce multi-user sample scoping" do
+  test "print endpoints enforce multi-user sample scoping and return 404 when foreign sample_ids are passed with stock modifiers" do
     other_user = User.create!(
       email: "other-potter@example.com",
       name: "Other Potter",
@@ -193,5 +193,68 @@ class PrintSheetsControllerTest < ActionDispatch::IntegrationTest
 
     get print_sample_sheet_path(private_sample)
     assert_response :not_found
+
+    get print_blend_sheet_path, params: {
+      sample_ids: [ private_sample.id ],
+      stock_keys: [ "whiting", "ferro_frit_3134" ],
+      target_cone: "6",
+      surface: "gloss"
+    }
+    assert_response :not_found
+
+    get print_blend_sheet_path, params: {
+      sample_ids: [ @clay.id, private_sample.id ],
+      stock_keys: [ "whiting" ],
+      target_cone: "6",
+      surface: "gloss"
+    }
+    assert_response :not_found
+  end
+
+  test "GET /blends/print ignores injected script_name and host route options in back link and QR code" do
+    clean_params = {
+      sample_ids: [ @clay.id ],
+      stock_keys: [ "whiting", "ferro_frit_3134" ],
+      target_cone: "6",
+      surface: "gloss",
+      recipe_title: "Canonical Bench Glaze"
+    }
+
+    get print_blend_sheet_path, params: clean_params
+    assert_response :success
+    clean_back_href = css_select("header a").first["href"]
+    clean_qr_markup = css_select(".qr-box").first.inner_html
+
+    get print_blend_sheet_path, params: clean_params.merge(
+      script_name: "//evil.example",
+      host: "evil.example"
+    )
+    assert_response :success
+    refute_includes response.body, "evil.example"
+    assert_equal clean_back_href, css_select("header a").first["href"]
+    assert_equal clean_qr_markup, css_select(".qr-box").first.inner_html
+  end
+
+  test "GET /blends and GET /blends/print do not double-escape titles containing ampersands and apostrophes" do
+    @clay.update!(title: "Potter's Clay & Ash")
+
+    get blends_path, params: {
+      sample_ids: [ @clay.id, @ash.id ],
+      target_cone: "10",
+      surface: "matte"
+    }
+    assert_response :success
+    refute_includes response.body, "&amp;amp;"
+    refute_includes response.body, "&amp;#39;"
+
+    get print_blend_sheet_path, params: {
+      sample_ids: [ @clay.id, @ash.id ],
+      target_cone: "10",
+      surface: "matte"
+    }
+    assert_response :success
+    refute_includes response.body, "&amp;amp;"
+    refute_includes response.body, "&amp;#39;"
+    refute_includes response.body, "<?xml"
   end
 end

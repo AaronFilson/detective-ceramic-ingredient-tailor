@@ -6,7 +6,6 @@ class RegionalSyncsController < ApplicationController
   DEFAULT_RADIUS_KM = 150
   MIN_RADIUS_KM = 25
   MAX_RADIUS_KM = 500
-  TILE_DEDUPE_TTL = 15.minutes
 
   # POST /regional_sync
   def create
@@ -34,8 +33,6 @@ class RegionalSyncsController < ApplicationController
         deduped: true
       )
     end
-
-    mark_tile_synced!(lat: lat, lng: lng, radius_km: radius_km)
 
     setting.update!(
       regional_sync_status: "queued",
@@ -65,23 +62,13 @@ class RegionalSyncsController < ApplicationController
   end
 
   def tile_cache_key(lat:, lng:, radius_km:)
-    "regional_sync:tile:#{(lat * 2).round}:#{(lng * 2).round}:#{radius_km}"
+    RegionalAtlasSyncJob.tile_cache_key(lat: lat, lng: lng, radius_km: radius_km)
   end
 
   def tile_recently_synced?(lat:, lng:, radius_km:)
     return false unless sync_dedupe_enabled?
 
     Rails.cache.exist?(tile_cache_key(lat: lat, lng: lng, radius_km: radius_km))
-  end
-
-  def mark_tile_synced!(lat:, lng:, radius_km:)
-    return unless sync_dedupe_enabled?
-
-    Rails.cache.write(
-      tile_cache_key(lat: lat, lng: lng, radius_km: radius_km),
-      Time.current.iso8601,
-      expires_in: TILE_DEDUPE_TTL
-    )
   end
 
   def respond_sync_accepted(setting:, lat:, lng:, radius_km:, deduped:)

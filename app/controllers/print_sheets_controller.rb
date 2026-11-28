@@ -6,7 +6,7 @@ class PrintSheetsController < ApplicationController
   layout "print"
 
   def sample
-    @sample = sample_scope
+    @sample = scoped_samples
       .includes(:geologic_unit, :soil_profile, :assay_results, :field_observations)
       .find(params[:id])
     @assay_result = @sample.latest_assay_result
@@ -26,9 +26,24 @@ class PrintSheetsController < ApplicationController
     @target_cone = normalized_cone_param
     @surface = normalized_surface_param
     @recipe_title = extract_param(:recipe_title).to_s.strip.presence
-    @back_path = blends_path(request.query_parameters)
 
-    selected = resolve_selected_materials(@sample_ids, @stock_keys)
+    selected_samples = resolve_selected_samples(@sample_ids)
+    unless selected_samples.size == @sample_ids.size
+      raise ActiveRecord::RecordNotFound, "One or more requested samples could not be found."
+    end
+
+    verified_sample_ids = selected_samples.map(&:id)
+    canonical_blend_params = {
+      sample_ids: verified_sample_ids.presence,
+      stock_keys: @stock_keys.presence,
+      target_cone: @target_cone,
+      surface: @surface,
+      recipe_title: @recipe_title&.truncate(80)
+    }.compact
+
+    @back_path = blends_path(canonical_blend_params)
+
+    selected = selected_samples + resolve_selected_stock_materials(@stock_keys)
     @blend_result = Chemistry::BlendRecipeBuilder.call(
       samples: selected,
       target_cone: @target_cone,
@@ -39,8 +54,8 @@ class PrintSheetsController < ApplicationController
     @batch_scales = BATCH_GRAM_SCALES
     @scaled_batch_rows = build_scaled_batch_rows(@blend_result.optimal)
     @test_cup_candidates = @blend_result.line_blend? ? @blend_result.candidates : @blend_result.top_candidates(12)
-    @tile_stamp = build_blend_tile_stamp(@sample_ids, @blend_result)
-    @qr_svg = Media::QrSvgGenerator.call(blends_url(request.query_parameters))
+    @tile_stamp = build_blend_tile_stamp(verified_sample_ids, @blend_result)
+    @qr_svg = Media::QrSvgGenerator.call(blends_url(canonical_blend_params))
   rescue ArgumentError => e
     @error_message = e.message
     render :blend, status: :unprocessable_content
@@ -48,18 +63,10 @@ class PrintSheetsController < ApplicationController
 
   private
 
-  def sample_scope
-    respond_to?(:scoped_samples, true) ? scoped_samples : UserSample.all
-  end
-
-  def resolve_selected_materials(sample_ids, stock_keys)
-    resolve_selected_samples(sample_ids) + resolve_selected_stock_materials(stock_keys)
-  end
-
   def resolve_selected_samples(ids)
     return [] if ids.empty?
 
-    by_id = sample_scope
+    by_id = scoped_samples
       .includes(:geologic_unit, :field_observations, :assay_results)
       .where(id: ids)
       .index_by(&:id)

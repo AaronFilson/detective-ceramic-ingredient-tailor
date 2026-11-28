@@ -11,8 +11,14 @@ class RegistrationsController < ApplicationController
 
   def create
     @user = User.new(registration_params)
+    saved = begin
+      @user.save(context: :registration)
+    rescue ActiveRecord::RecordNotUnique
+      @user.errors.add(:email, :taken)
+      false
+    end
 
-    if @user.save(context: :registration)
+    if saved
       claimed = start_new_session_for(@user)
       notice = if claimed.positive?
         "Welcome! Claimed #{claimed} guest studio #{'sample'.pluralize(claimed)} into your account."
