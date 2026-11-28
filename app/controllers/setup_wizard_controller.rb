@@ -78,6 +78,7 @@ class SetupWizardController < ApplicationController
       longitude: setting.default_lng.to_f,
       notes: "Starter sample created during DCI Tailor first-time setup."
     )
+    assign_sample_ownership(sample)
 
     cached_unit = GeologicUnit
       .where("boundary IS NOT NULL AND ST_Covers(boundary, ST_SetSRID(ST_MakePoint(?, ?), 4326))", sample.longitude, sample.latitude)

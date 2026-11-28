@@ -1,0 +1,288 @@
+<% content_for :title, "#{@tile_stamp} · #{@sample.title} — DCI Tailor Bench Sheet" %>
+<% oxides = @assay_result&.oxides || {} %>
+<% minor_oxides = (@assay_result&.minor_oxides || {}).select { |_k, v| v.to_f.positive? } %>
+<% umf = @assay_result&.umf_formula || {} %>
+<% fluxes = umf["fluxes"] || {} %>
+<% intermediates = umf["intermediates"] || {} %>
+<% glass_formers = umf["glass_formers"] || {} %>
+<% unit = @sample.geologic_unit %>
+
+<%# Top Studio Identification Header + Scannable QR Code %>
+<section class="avoid-break border-b-2 border-stone-900 pb-4 flex items-start justify-between gap-4">
+  <div class="space-y-1.5 min-w-0">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="font-mono text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 border border-stone-900 bg-stone-900 text-white">
+        DCI Tailor
+      </span>
+      <span class="font-mono text-xs font-bold uppercase tracking-wider text-stone-700">
+        Sample Test-Tile &amp; Kiln Firing Bench Sheet
+      </span>
+    </div>
+
+    <h1 class="text-xl sm:text-2xl font-extrabold text-stone-950 tracking-tight">
+      <%= @sample.title %>
+    </h1>
+
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-800">
+      <span>
+        <strong>Tile Stamp:</strong>
+        <code class="font-mono font-extrabold px-1.5 py-0.5 border border-stone-800 bg-stone-100"><%= @tile_stamp %></code>
+      </span>
+      <span>
+        <strong>Category:</strong> <%= material_category_label(@sample.material_category) %>
+      </span>
+      <% if @sample.latitude.present? && @sample.longitude.present? %>
+        <span class="font-mono">
+          <strong>GPS:</strong> <%= format("%.5f, %.5f", @sample.latitude, @sample.longitude) %>
+        </span>
+      <% end %>
+      <span>
+        <strong>Printed:</strong> <%= Time.current.strftime("%Y-%m-%d") %>
+      </span>
+    </div>
+
+    <div class="text-xs text-stone-700">
+      <strong>Geologic Formation (Macrostrat):</strong>
+      <% if unit.present? %>
+        <%= [ unit.name, unit.strat_name, unit.age.present? ? "(#{unit.age})" : nil ].compact_blank.uniq.join(" · ") %>
+      <% else %>
+        Unmapped / Field-logged locality
+      <% end %>
+    </div>
+  </div>
+
+  <% if @qr_svg.present? %>
+    <div class="shrink-0 flex flex-col items-center gap-1">
+      <div class="qr-box w-24 h-24 border border-stone-800 p-1 bg-white">
+        <%= @qr_svg %>
+      </div>
+      <span class="font-mono text-[9px] uppercase tracking-wider text-stone-600">Scan for Assay</span>
+    </div>
+  <% end %>
+</section>
+
+<%# Oxide Weight % & Seger UMF Summary %>
+<section class="avoid-break space-y-2.5">
+  <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+    <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+      1. Oxide Weight % &amp; Seger UMF Chemistry Summary
+    </h2>
+    <% if @assay_result.present? %>
+      <span class="font-mono text-[11px] text-stone-700">
+        <%= source_type_badge(@assay_result.source_type)[:label] %>
+        <% if @assay_result.confidence_score.present? %>
+          · <%= (@assay_result.confidence_score.to_f * 100).round %>% Conf.
+        <% end %>
+      </span>
+    <% end %>
+  </div>
+
+  <% if @assay_result.present? %>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs border-collapse border border-stone-800">
+        <thead>
+          <tr class="bg-stone-100 border-b border-stone-800 font-mono text-[10px] uppercase">
+            <% CeramicOxides::KEYS.each do |oxide_key| %>
+              <th class="py-1.5 px-1.5 text-right font-bold border-r border-stone-300 last:border-r-0"><%= oxide_key %></th>
+            <% end %>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="font-mono tabular-nums">
+            <% CeramicOxides::KEYS.each do |oxide_key| %>
+              <td class="py-1.5 px-1.5 text-right border-r border-stone-300 last:border-r-0 font-semibold">
+                <%= format("%.2f", oxides[oxide_key].to_f) %>
+              </td>
+            <% end %>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <% if minor_oxides.any? %>
+      <div class="text-xs font-mono text-stone-800 border border-stone-300 rounded px-2.5 py-1.5 bg-stone-50">
+        <strong>Minor Oxides (wt%):</strong>
+        <%= minor_oxides.map { |ox, val| "#{ox} #{format('%.2f%%', val.to_f)}" }.join(" · ") %>
+      </div>
+    <% end %>
+
+    <%# Compact 3-Column Seger UMF Box %>
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs font-mono">
+      <div class="border border-stone-800 p-2 bg-stone-50">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-600">SiO₂ : Al₂O₃ Ratio</div>
+        <div class="text-base font-extrabold text-stone-950 mt-0.5">
+          <%= umf["si_al_ratio"].present? ? "#{format('%.2f', umf['si_al_ratio'].to_f)} : 1" : "—" %>
+        </div>
+        <div class="text-[10px] text-stone-600">
+          Eq.Wt <%= format("%.1f", umf["equivalent_weight"].to_f) %>
+        </div>
+      </div>
+
+      <div class="border border-stone-400 p-2">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-700 border-b border-stone-200 pb-0.5 mb-1">
+          RO + R₂O Fluxes (R₂O <%= format("%.2f", umf["r2o_total"].to_f) %> / RO <%= format("%.2f", umf["ro_total"].to_f) %>)
+        </div>
+        <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]">
+          <% %w[CaO MgO Na2O K2O MnO Li2O SrO BaO ZnO].each do |ox| %>
+            <% val = fluxes[ox].to_f %>
+            <% next unless val.positive? || %w[CaO MgO Na2O K2O].include?(ox) %>
+            <span><strong><%= ox %>:</strong> <%= format("%.3f", val) %></span>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="border border-stone-400 p-2">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-700 border-b border-stone-200 pb-0.5 mb-1">
+          R₂O₃ Intermediates
+        </div>
+        <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]">
+          <span><strong>Al₂O₃:</strong> <%= format("%.3f", intermediates["Al2O3"].to_f) %></span>
+          <span><strong>Fe₂O₃:</strong> <%= format("%.3f", intermediates["Fe2O3"].to_f) %></span>
+          <% if intermediates["B2O3"].to_f.positive? %>
+            <span><strong>B₂O₃:</strong> <%= format("%.3f", intermediates["B2O3"].to_f) %></span>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="border border-stone-400 p-2">
+        <div class="text-[10px] font-sans font-bold uppercase text-stone-700 border-b border-stone-200 pb-0.5 mb-1">
+          RO₂ Glass Formers
+        </div>
+        <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]">
+          <span><strong>SiO₂:</strong> <%= format("%.3f", glass_formers["SiO2"].to_f) %></span>
+          <span><strong>TiO₂:</strong> <%= format("%.3f", glass_formers["TiO2"].to_f) %></span>
+          <% if glass_formers["P2O5"].to_f.positive? %>
+            <span><strong>P₂O₅:</strong> <%= format("%.3f", glass_formers["P2O5"].to_f) %></span>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <p class="text-xs italic text-stone-600 border border-dashed border-stone-400 p-3">
+      No chemical assay recorded yet — log field tests below and scan the QR code to update in DCI Tailor.
+    </p>
+  <% end %>
+</section>
+
+<%# 100 mm Wet -> Bone-Dry -> Fired Shrinkage & Boiling Absorption Worksheet %>
+<section class="avoid-break space-y-2.5">
+  <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+    <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+      2. 100 mm Shrinkage Bar &amp; 5-Hour Boiling Absorption Bench Worksheet
+    </h2>
+    <span class="font-mono text-[10px] text-stone-600">
+      Stamp bar with <%= @tile_stamp %> · Score sharp 100.0 mm scribed ticks in plastic clay
+    </span>
+  </div>
+
+  <table class="w-full text-xs border-collapse border border-stone-800">
+    <thead>
+      <tr class="bg-stone-100 border-b border-stone-800 text-[10px] uppercase tracking-wider">
+        <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400 w-1/3">Bench Measurement</th>
+        <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400 w-1/4">Formula</th>
+        <th class="py-1.5 px-2 text-left font-bold border-r border-stone-400 w-1/5">Logged Value</th>
+        <th class="py-1.5 px-2 text-left font-bold">Clipboard Write-In</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-300">
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Plastic Wet Scribed Length (L<sub>wet</sub>)</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">Standard = 100.0 mm</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">100.0 mm</td>
+        <td class="py-2 px-2 font-mono">________ mm</td>
+      </tr>
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Bone-Dry Length (L<sub>dry</sub>) &amp; Drying Shrinkage</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">(100 − L<sub>dry</sub>) / 100 × 100%</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">
+          <%= @field_observation&.drying_shrinkage_percent.present? ? format("%.2f%%", @field_observation.drying_shrinkage_percent) : "—" %>
+        </td>
+        <td class="py-2 px-2 font-mono">____ mm &rarr; ____ %</td>
+      </tr>
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Fired Length (L<sub>fired</sub>) &amp; Firing Shrinkage</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">(L<sub>dry</sub> − L<sub>fired</sub>) / L<sub>dry</sub> × 100%</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">
+          <%= @field_observation&.firing_shrinkage_percent.present? ? format("%.2f%%", @field_observation.firing_shrinkage_percent) : "—" %>
+        </td>
+        <td class="py-2 px-2 font-mono">____ mm &rarr; ____ % (Cone ____)</td>
+      </tr>
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Total Wet &rarr; Fired Shrinkage</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">(100 − L<sub>fired</sub>) / 100 × 100%</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">
+          <%= @field_observation&.effective_total_shrinkage.present? ? format("%.2f%%", @field_observation.effective_total_shrinkage) : "—" %>
+        </td>
+        <td class="py-2 px-2 font-mono">________ %</td>
+      </tr>
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Dry Fired Wt (W<sub>dry</sub>) &rarr; Boiled Saturated Wt (W<sub>sat</sub>)</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">(W<sub>sat</sub> − W<sub>dry</sub>) / W<sub>dry</sub> × 100%</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">
+          <%= @field_observation&.boiling_water_absorption_percent.present? ? format("%.2f%%", @field_observation.boiling_water_absorption_percent) : "—" %>
+        </td>
+        <td class="py-2 px-2 font-mono">W<sub>dry</sub> ____g / W<sub>sat</sub> ____g &rarr; ____%</td>
+      </tr>
+      <tr>
+        <td class="py-2 px-2 font-semibold border-r border-stone-400">Studio Kiln LOI Check (1000 °C)</td>
+        <td class="py-2 px-2 font-mono text-[11px] border-r border-stone-400">(W<sub>bone</sub> − W<sub>bisque</sub>) / W<sub>bone</sub> × 100%</td>
+        <td class="py-2 px-2 font-mono border-r border-stone-400">
+          Est. <%= format("%.2f%%", oxides["LOI"].to_f) %>
+        </td>
+        <td class="py-2 px-2 font-mono">W<sub>bone</sub> ____g / W<sub>fired</sub> ____g &rarr; ____%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="border border-stone-400 p-2.5 text-xs space-y-3">
+    <div class="flex flex-wrap justify-between gap-4 font-mono text-[11px]">
+      <span><strong>Kiln / Atmosphere:</strong> __________________</span>
+      <span><strong>Witness Cone:</strong> <%= @field_observation&.fired_cone.presence || "______" %></span>
+      <span><strong>Vinegar Fizz:</strong> <%= @field_observation&.vinegar_fizz&.humanize || "______" %></span>
+      <span><strong>Plasticity:</strong> <%= @field_observation&.plasticity&.humanize || "______" %></span>
+    </div>
+    <div class="pt-1 border-t border-dashed border-stone-300 text-stone-700">
+      <strong>Fired Surface / Melt / Warping Notes:</strong>
+      <div class="h-10 border-b border-dotted border-stone-400 mt-1">
+        <%= @sample.notes.presence %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%# Safety / Kiln Hazard Callouts %>
+<section class="avoid-break space-y-2">
+  <div class="flex items-center justify-between border-b border-stone-300 pb-1">
+    <h2 class="text-xs font-extrabold uppercase tracking-wider text-stone-900">
+      3. Studio Health, Processing &amp; Kiln Fume Safety Callouts
+    </h2>
+    <span class="font-mono text-[10px] font-semibold text-stone-700">
+      <%= @hazard_report.summary %>
+    </span>
+  </div>
+
+  <% if @hazard_report.any? %>
+    <div class="space-y-2">
+      <% @hazard_report.alerts.each do |alert| %>
+        <div class="border border-stone-800 p-2.5 text-xs space-y-1 bg-stone-50">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-extrabold text-stone-950">
+              [<%= alert[:severity].to_s.upcase %>] <%= alert[:title] %>
+            </span>
+            <span class="font-mono text-[10px] uppercase px-1.5 py-0.5 border border-stone-500">
+              <%= alert[:category] %>
+            </span>
+          </div>
+          <p class="text-stone-800 leading-snug"><%= alert[:detail] %></p>
+          <p class="text-stone-950 font-medium leading-snug">
+            <strong>Bench Action:</strong> <%= alert[:recommendation] %>
+          </p>
+        </div>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="text-xs text-stone-700 border border-stone-300 p-2.5 bg-stone-50">
+      No elevated heavy-metal, fluorine/sulfide kiln gas, or crystalline-rock crushing alerts flagged. Standard studio wet-wiping and P100 dry-powder respirator hygiene still apply.
+    </p>
+  <% end %>
+</section>

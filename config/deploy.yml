@@ -1,0 +1,95 @@
+# Kamal 2 production deployment configuration for dci-tailor.glazecalcapp.com
+# Co-hosted on the Graviton t4g.small instance alongside glazecalc (:3000) and glazecalc-staging (:3001).
+# Host Nginx terminates TLS on :443 and proxies to kamal-proxy on 127.0.0.1:3002.
+
+service: dci-tailor
+
+image: aaronfilson/detective-ceramic-ingredient-tailor
+
+servers:
+  web:
+    hosts:
+      - <%= ENV.fetch("DCI_TAILOR_SERVER_HOST", "glazecalc-ec2") %>
+    options:
+      memory: 512m
+
+proxy:
+  ssl: false
+  host: dci-tailor.glazecalcapp.com
+  app_port: 80
+  forward_headers: true
+  run:
+    http_port: 3002
+    https_port: 3443
+    bind_ips:
+      - 127.0.0.1
+
+registry:
+  server: ghcr.io
+  username: aaronfilson
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: arm64
+
+ssh:
+  user: <%= ENV.fetch("DCI_TAILOR_SSH_USER", "admin") %>
+
+asset_path: /rails/public/assets
+
+logging:
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
+
+env:
+  clear:
+    APP_HOST: dci-tailor.glazecalcapp.com
+    SOLID_QUEUE_IN_PUMA: "true"
+    WEB_CONCURRENCY: "0"
+    RAILS_MAX_THREADS: "3"
+    JOB_THREADS: "1"
+    ACTIVE_STORAGE_SERVICE: amazon
+    AWS_REGION: us-west-2
+    POSTGRES_HOST: dci-tailor-db
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: dci_tailor_production
+    POSTGRES_USER: dci_tailor
+  secret:
+    - SECRET_KEY_BASE
+    - POSTGRES_PASSWORD
+    - AWS_S3_BUCKET
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
+    - SMTP_URL
+    - MINDAT_API_TOKEN
+    - GEOROC_API_KEY
+
+aliases:
+  console: app exec --interactive --reuse "bin/rails console"
+  shell: app exec --interactive --reuse "bash"
+  logs: app logs -f
+  dbc: app exec --interactive --reuse "bin/rails dbconsole --include-password"
+
+<% unless ENV["KAMAL_DESTINATION"] == "staging" %>
+accessories:
+  db:
+    image: postgis/postgis:16-3.4
+    host: <%= ENV.fetch("DCI_TAILOR_SERVER_HOST", "glazecalc-ec2") %>
+    port: "127.0.0.1:5433:5432"
+    cmd: "postgres -c shared_buffers=96MB -c work_mem=4MB -c maintenance_work_mem=32MB -c max_connections=25"
+    options:
+      memory: 320m
+    env:
+      clear:
+        POSTGRES_USER: dci_tailor
+        POSTGRES_DB: dci_tailor_production
+      secret:
+        - POSTGRES_PASSWORD
+    files:
+      - deploy/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+    directories:
+      - data:/var/lib/postgresql/data
+<% end %>

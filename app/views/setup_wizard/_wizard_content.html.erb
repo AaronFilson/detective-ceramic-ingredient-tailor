@@ -4,7 +4,8 @@
   is_modal = local_assigns.fetch(:modal, false)
   mindat_ready = defined?(Clients::MindatClient) && Clients::MindatClient.configured?
   georoc_ready = defined?(Clients::GeorocClient) && Clients::GeorocClient.configured?
-  has_samples = UserSample.exists?
+  owner_user = respond_to?(:current_user, true) ? current_user : nil
+  has_samples = UserSample.for_owner(user: owner_user, guest_token: Current.guest_token).exists?
 %>
 
 <div
@@ -439,17 +440,19 @@
     </div>
   <% end %>
 
-  <% if lookup_context.exists?("setup_wizard/regional_sync_card", [], true) %>
-    <div
-      data-setup-wizard-target="stepPanel"
-      data-step="4"
-      class="<%= initial_step == 4 ? '' : 'hidden' %> px-5 sm:px-6 py-4 bg-[#F5F0E6]/80 border-t border-[#E8DFD0]"
-    >
+  <div
+    data-setup-wizard-target="stepPanel"
+    data-step="4"
+    class="<%= initial_step == 4 ? '' : 'hidden' %> px-5 sm:px-6 py-4 bg-[#F5F0E6]/80 border-t border-[#E8DFD0] space-y-4"
+  >
+    <% if lookup_context.exists?("setup_wizard/regional_sync_card", [], true) %>
       <%= render "setup_wizard/regional_sync_card",
         dom_id: "wizard_regional_sync_card",
         studio_setting: setting,
         lat: setting.default_lat,
         lng: setting.default_lng %>
-    </div>
-  <% end %>
+    <% end %>
+
+    <%= render "setup_wizard/api_tokens_card" %>
+  </div>
 </div>

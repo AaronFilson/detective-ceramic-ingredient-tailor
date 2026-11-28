@@ -107,7 +107,7 @@ class BlendsController < ApplicationController
   private
 
   def load_available_samples
-    UserSample
+    scoped_samples
       .includes(:geologic_unit, :field_observations, :assay_results)
       .joins(:assay_results)
       .distinct
@@ -122,7 +122,7 @@ class BlendsController < ApplicationController
   def resolve_selected_samples(ids)
     return [] if ids.empty?
 
-    by_id = UserSample
+    by_id = scoped_samples
       .includes(:geologic_unit, :field_observations, :assay_results)
       .where(id: ids)
       .index_by(&:id)

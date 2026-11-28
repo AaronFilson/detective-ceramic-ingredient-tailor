@@ -255,10 +255,20 @@
               export_glaze_vault_blends_path(export_params),
               data: { turbo: false },
               class: "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B84A27] hover:bg-[#963B1D] text-white text-xs font-semibold shadow-sm transition-colors" %>
+
+            <%= link_to "Print Kiln Bench Sheet",
+              print_blend_sheet_path(export_params),
+              target: "_blank",
+              rel: "noopener",
+              data: { turbo: false },
+              class: "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-900 border border-[#D6C7B2] text-xs font-semibold shadow-sm transition-colors" %>
           </div>
         </div>
       </div>
     </article>
+
+    <%# Interactive Inline SVG Triaxial Simplex Heatmap or 11-Tile Line-Blend Strip %>
+    <%= render "blends/simplex_heatmap", blend_result: blend_result %>
 
     <%# Full Line-Blend Progression or Top Triaxial Candidates Table %>
     <% rows = blend_result.line_blend? ? blend_result.candidates : blend_result.top_candidates(12) %>

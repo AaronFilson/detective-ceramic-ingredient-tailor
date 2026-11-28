@@ -35,8 +35,8 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           <% outcrop_photos.each do |photo| %>
             <figure class="rounded-xl border border-[#D6C7B2] bg-white overflow-hidden shadow-xs group">
-              <%= link_to url_for(photo), target: "_blank", rel: "noopener", class: "block relative overflow-hidden bg-stone-100" do %>
-                <%= image_tag url_for(photo),
+              <%= link_to stripped_photo_url(photo, resize_to_limit: [ 1600, 1600 ]), target: "_blank", rel: "noopener", class: "block relative overflow-hidden bg-stone-100" do %>
+                <%= image_tag stripped_photo_url(photo, resize_to_limit: [ 800, 800 ]),
                   alt: "#{sample.title} — #{photo.filename}",
                   class: "w-full h-28 object-cover group-hover:scale-[1.02] transition-transform duration-150" %>
               <% end %>
@@ -85,8 +85,8 @@
                     Raw / Unfired<%= " · #{obs.raw_color}" if obs.raw_color.present? %>
                   </div>
                   <% if obs.raw_tile_photo.attached? && obs.raw_tile_photo.attachment&.persisted? %>
-                    <%= link_to url_for(obs.raw_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
-                      <%= image_tag url_for(obs.raw_tile_photo),
+                    <%= link_to stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 1600, 1600 ]), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 800, 800 ]),
                         alt: "Raw test tile for #{sample.title} (log ##{obs.id})",
                         class: "w-full h-28 object-cover" %>
                     <% end %>
@@ -102,8 +102,8 @@
                     Fired Tile<%= " · Cone #{obs.fired_cone}" if obs.fired_cone.present? %>
                   </div>
                   <% if obs.fired_tile_photo.attached? && obs.fired_tile_photo.attachment&.persisted? %>
-                    <%= link_to url_for(obs.fired_tile_photo), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
-                      <%= image_tag url_for(obs.fired_tile_photo),
+                    <%= link_to stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 1600, 1600 ]), target: "_blank", rel: "noopener", class: "block rounded-lg overflow-hidden border border-[#E8DFD0] bg-stone-100" do %>
+                      <%= image_tag stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 800, 800 ]),
                         alt: "Fired test tile for #{sample.title} (log ##{obs.id})",
                         class: "w-full h-28 object-cover" %>
                     <% end %>

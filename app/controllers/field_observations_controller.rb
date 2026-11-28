@@ -62,7 +62,7 @@ class FieldObservationsController < ApplicationController
   private
 
   def set_sample
-    @sample = UserSample.find(params[:sample_id])
+    @sample = scoped_samples.find(params[:sample_id])
   end
 
   def field_observation_params

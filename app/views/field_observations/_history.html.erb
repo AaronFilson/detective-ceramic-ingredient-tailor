@@ -87,16 +87,16 @@
             <% if has_raw_photo || has_fired_photo %>
               <div class="flex flex-wrap items-center gap-2.5 pt-1" data-history-tile-photos="<%= obs.id %>">
                 <% if has_raw_photo %>
-                  <%= link_to url_for(obs.raw_tile_photo), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#B84A27] transition-colors" do %>
-                    <%= image_tag url_for(obs.raw_tile_photo),
+                  <%= link_to stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 1200, 1200 ]), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#B84A27] transition-colors" do %>
+                    <%= image_tag stripped_photo_url(obs.raw_tile_photo, resize_to_limit: [ 240, 240 ]),
                       alt: "Raw tile photo for observation ##{obs.id}",
                       class: "w-11 h-11 rounded object-cover" %>
                     <span class="pr-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-600">Raw</span>
                   <% end %>
                 <% end %>
                 <% if has_fired_photo %>
-                  <%= link_to url_for(obs.fired_tile_photo), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#1E4E79] transition-colors" do %>
-                    <%= image_tag url_for(obs.fired_tile_photo),
+                  <%= link_to stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 1200, 1200 ]), target: "_blank", rel: "noopener", class: "inline-flex items-center gap-1.5 rounded-lg bg-white border border-[#D6C7B2] p-1 hover:border-[#1E4E79] transition-colors" do %>
+                    <%= image_tag stripped_photo_url(obs.fired_tile_photo, resize_to_limit: [ 240, 240 ]),
                       alt: "Fired tile photo for observation ##{obs.id}",
                       class: "w-11 h-11 rounded object-cover" %>
                     <span class="pr-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#1E4E79]">Fired</span>

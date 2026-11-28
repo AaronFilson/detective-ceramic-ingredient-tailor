@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class MineralOccurrencesController < ApplicationController
+  rate_limit to: 6, within: 5.minutes, only: :refresh
+
   DEFAULT_RADIUS_KM = 50.0
   MIN_RADIUS_KM = 1.0
   MAX_RADIUS_KM = 500.0

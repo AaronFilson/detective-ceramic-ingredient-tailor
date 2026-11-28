@@ -85,7 +85,45 @@ class StudioSetting < ApplicationRecord
   before_validation :normalize_defaults
 
   def self.current
-    order(:id).first || create!
+    if Current.user.present? || Current.guest_token.present?
+      for_context(user: Current.user, guest_token: Current.guest_token)
+    else
+      where(user_id: nil, guest_token: nil).order(:id).first || order(:id).first || create!
+    end
+  end
+
+  def self.for_context(user:, guest_token:)
+    if user.present?
+      find_or_create_by!(user_id: user.id)
+    elsif guest_token.present?
+      existing = find_by(guest_token: guest_token)
+      return existing if existing
+
+      unclaimed = where(user_id: nil, guest_token: nil).order(:id).first
+      if unclaimed
+        unclaimed.update_column(:guest_token, guest_token)
+        unclaimed
+      else
+        create!(guest_token: guest_token)
+      end
+    else
+      where(user_id: nil, guest_token: nil).order(:id).first || create!
+    end
+  end
+
+  def self.claim_guest!(guest_token:, user:)
+    return nil if guest_token.blank? || user.blank?
+
+    guest_setting = find_by(user_id: nil, guest_token: guest_token)
+    return user.studio_setting if guest_setting.nil?
+
+    if exists?(user_id: user.id)
+      guest_setting.destroy
+      find_by(user_id: user.id)
+    else
+      guest_setting.update!(user: user, guest_token: nil)
+      guest_setting
+    end
   end
 
   def onboarding_needed?

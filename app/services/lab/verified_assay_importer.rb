@@ -49,7 +49,9 @@ module Lab
       csv_file: nil,
       lab_name: nil,
       lab_report_ref: nil,
-      promote_to_reference: false
+      promote_to_reference: false,
+      coordinate_privacy: "exact",
+      promoted_by_user: nil
     )
       new(
         user_sample: user_sample,
@@ -58,7 +60,9 @@ module Lab
         csv_file: csv_file,
         lab_name: lab_name,
         lab_report_ref: lab_report_ref,
-        promote_to_reference: promote_to_reference
+        promote_to_reference: promote_to_reference,
+        coordinate_privacy: coordinate_privacy,
+        promoted_by_user: promoted_by_user
       ).call
     end
 
@@ -136,7 +140,9 @@ module Lab
       csv_file: nil,
       lab_name: nil,
       lab_report_ref: nil,
-      promote_to_reference: false
+      promote_to_reference: false,
+      coordinate_privacy: "exact",
+      promoted_by_user: nil
     )
       @user_sample = user_sample
       @source_type = (source_type.presence || :verified_lab_xrf).to_s
@@ -145,6 +151,8 @@ module Lab
       @lab_name = lab_name.to_s.strip.presence
       @lab_report_ref = lab_report_ref.to_s.strip.presence
       @promote_to_reference = ActiveModel::Type::Boolean.new.cast(promote_to_reference) || false
+      @coordinate_privacy = coordinate_privacy.to_s.presence || "exact"
+      @promoted_by_user = promoted_by_user
       @errors = []
       @feo_converted = false
       @input_mode = nil
@@ -189,7 +197,8 @@ module Lab
             reference_assay = upsert_community_reference_assay!(normalized)
             assay_result.reference_assay = reference_assay
             assay_result.promoted_to_reference = true
-            reasoning_entries << "Promoted to Regional Spatial Atlas (ReferenceAssay ##{reference_assay.id}, source: #{reference_assay.source}) as 2.5x weighted calibration prior."
+            privacy_note = @coordinate_privacy == "fuzzed_2km" ? " (fuzzed ~2 km)" : ""
+            reasoning_entries << "Promoted to Regional Spatial Atlas#{privacy_note} (ReferenceAssay ##{reference_assay.id}, source: #{reference_assay.source}) as 2.5x weighted calibration prior."
           else
             reasoning_entries << "Skipped Regional Spatial Atlas promotion: sample has no GPS coordinates."
           end
@@ -238,6 +247,10 @@ module Lab
 
       unless VALID_SOURCE_TYPES.include?(@source_type)
         @errors << "Source type must be verified_lab_xrf or verified_lab_icpms."
+      end
+
+      if @promote_to_reference && !ReferenceAssay::COORDINATE_PRIVACY_MODES.include?(@coordinate_privacy)
+        @errors << "Coordinate privacy must be exact or fuzzed_2km."
       end
     end
 
@@ -612,15 +625,28 @@ module Lab
       ref_assay = ReferenceAssay.find_or_initialize_by(source: ref_source, external_id: external_id)
       ref_assay.assign_attributes(
         rock_type: infer_rock_type(@user_sample),
-        location: @user_sample.location,
+        coordinate_privacy: @coordinate_privacy,
+        promoted_by_user: @promoted_by_user,
         oxides: normalized_oxides,
         raw_metadata: {
           "sample_title" => @user_sample.title,
           "lab_name" => @lab_name,
           "lab_report_ref" => @lab_report_ref,
-          "geologic_unit" => @user_sample.geologic_unit&.name
+          "geologic_unit" => @user_sample.geologic_unit&.name,
+          "coordinate_privacy" => @coordinate_privacy
         }.compact
       )
+      if @coordinate_privacy == "fuzzed_2km"
+        fuzzed_lat, fuzzed_lng = ReferenceAssay.fuzz_coordinates(
+          @user_sample.latitude,
+          @user_sample.longitude,
+          seed_key: "sample-#{@user_sample.id}"
+        )
+        ref_assay.latitude = fuzzed_lat
+        ref_assay.longitude = fuzzed_lng
+      else
+        ref_assay.location = @user_sample.location
+      end
       ref_assay.save!
       ref_assay
     end

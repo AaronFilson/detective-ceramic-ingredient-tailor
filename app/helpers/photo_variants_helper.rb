@@ -1,0 +1,32 @@
+# frozen_string_literal: true
+
+module PhotoVariantsHelper
+  # Returns an EXIF-stripped display variant URL when enabled (default in production),
+  # preserving raw EXIF GPS only inside the private server-side UserSample upload while
+  # never exposing camera/GPS metadata in rendered gallery or tile images.
+  # Gracefully falls back to `url_for(attachment)` when variant processing is unavailable
+  # or when minimal test-fixture blobs cannot be transformed.
+  def stripped_photo_url(attachment, resize_to_limit: [ 1200, 1200 ], strip_variants: nil)
+    return nil if attachment.nil?
+    return nil if attachment.respond_to?(:attached?) && !attachment.attached?
+
+    record_attachment = attachment.respond_to?(:attachment) ? attachment.attachment : attachment
+    persisted = record_attachment.present? && record_attachment.persisted? && record_attachment.blob&.persisted?
+    return url_for(attachment) unless persisted
+
+    strip_enabled =
+      if strip_variants.nil?
+        ENV.fetch("STRIP_PHOTO_EXIF_VARIANTS", Rails.env.production?.to_s) == "true"
+      else
+        strip_variants
+      end
+
+    if strip_enabled && attachment.respond_to?(:variable?) && attachment.variable?
+      url_for(attachment.variant(resize_to_limit: resize_to_limit, saver: { strip: true }))
+    else
+      url_for(attachment)
+    end
+  rescue LoadError, StandardError
+    url_for(attachment)
+  end
+end

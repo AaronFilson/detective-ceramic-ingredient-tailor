@@ -25,6 +25,26 @@ class UserSample < ApplicationRecord
   validates :material_category, presence: true
   validate :validate_outcrop_photos
 
+  scope :for_owner, ->(user:, guest_token:) {
+    if user.present?
+      where(user_id: user.id)
+    elsif guest_token.present?
+      where(user_id: nil, guest_token: [ guest_token, nil ])
+    else
+      where(user_id: nil, guest_token: nil)
+    end
+  }
+
+  def self.claim_guest!(guest_token:, user:)
+    return 0 if guest_token.blank? || user.blank?
+
+    where(user_id: nil, guest_token: guest_token).update_all(
+      user_id: user.id,
+      guest_token: nil,
+      updated_at: Time.current
+    )
+  end
+
   def latest_assay_result
     assay_results.order(created_at: :desc, id: :desc).first
   end

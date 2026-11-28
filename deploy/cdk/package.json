@@ -1,0 +1,24 @@
+{
+  "name": "dci-tailor-cdk",
+  "private": true,
+  "description": "AWS CDK stack for DCI Tailor (dci-tailor.glazecalcapp.com): private S3 ActiveStorage + pgdump bucket, scoped IAM storage user, SSM parameter, and GitHub Actions OIDC deploy role.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "synth": "cdk synth --quiet",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.275.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "aws-cdk": "2.1146.1",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,84 @@
+<%
+  newly_created_token = flash[:newly_created_api_token]
+  active_tokens = authenticated? ? current_user.api_tokens.active.order(created_at: :desc) : []
+%>
+
+<div id="api_tokens_card" class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-3" data-api-tokens-card>
+  <div class="space-y-0.5">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#B84A27]/12 text-[#963B1D] border border-[#B84A27]/25">
+        Personal API Tokens
+      </span>
+      <span class="font-mono text-[10px] text-stone-500">Bearer dcit_… · /api/v1/materials</span>
+    </div>
+    <h4 class="text-xs sm:text-sm font-bold text-stone-900 leading-snug">
+      Scoped Glazecalc &amp; MCP Read-Only API Access
+    </h4>
+    <p class="text-[11px] text-stone-600 leading-relaxed">
+      Mint personal Bearer tokens so external glaze calculators or MCP workflows can read only your studio’s assayed materials.
+    </p>
+  </div>
+
+  <% if newly_created_token.present? %>
+    <div class="rounded-xl bg-amber-50 border border-amber-300 p-3 space-y-1.5" data-newly-created-api-token>
+      <div class="text-xs font-bold text-amber-950">
+        Copy your new API token now — it will not be displayed again:
+      </div>
+      <code class="block w-full rounded-lg bg-white border border-amber-300 px-3 py-2 font-mono text-xs text-stone-900 select-all break-all"><%= newly_created_token %></code>
+    </div>
+  <% end %>
+
+  <% if authenticated? %>
+    <% if active_tokens.any? %>
+      <div class="space-y-1.5">
+        <% active_tokens.each do |token| %>
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white border border-[#E8DFD0] px-3 py-2 text-xs" data-api-token-row="<%= token.id %>">
+            <div class="space-y-0.5 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-stone-900"><%= token.name %></span>
+                <code class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200"><%= token.token_prefix %>…</code>
+              </div>
+              <div class="text-[11px] text-stone-500 font-mono">
+                <% if token.last_used_at.present? %>
+                  Last used <%= time_ago_in_words(token.last_used_at) %> ago
+                <% else %>
+                  Never used
+                <% end %>
+              </div>
+            </div>
+
+            <%= button_to "Revoke",
+              api_token_path(token),
+              method: :delete,
+              form: { class: "inline" },
+              class: "px-2.5 py-1 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-800 text-xs font-semibold transition-colors cursor-pointer" %>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <p class="text-xs text-stone-500 italic">No active personal API tokens yet.</p>
+    <% end %>
+
+    <%= form_with scope: :api_token, url: api_tokens_path, method: :post, class: "flex flex-wrap items-center gap-2 pt-1" do |tf| %>
+      <%= tf.label :name, "Token Name", class: "sr-only" %>
+      <%= tf.text_field :name,
+        required: true,
+        placeholder: "e.g., Glazecalc Desktop Sync",
+        class: "flex-1 min-w-[180px] rounded-lg border border-[#D6C7B2] bg-white px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B84A27]/35 focus:border-[#B84A27]" %>
+      <%= tf.submit "Generate API Token",
+        class: "px-3.5 py-1.5 rounded-lg bg-[#B84A27] hover:bg-[#963B1D] text-[#FAF7F2] text-xs font-semibold shadow-sm transition-colors cursor-pointer" %>
+    <% end %>
+  <% else %>
+    <div class="rounded-lg bg-white border border-[#E8DFD0] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-700">
+      <span>Create a free studio account to generate personal API tokens.</span>
+      <div class="flex items-center gap-2">
+        <%= link_to "Create Account",
+          new_registration_path,
+          class: "px-3 py-1 rounded-lg bg-[#B84A27] hover:bg-[#963B1D] text-[#FAF7F2] font-semibold transition-colors" %>
+        <%= link_to "Sign In",
+          new_session_path,
+          class: "px-2.5 py-1 rounded-lg border border-[#D6C7B2] bg-[#FAF7F2] hover:bg-stone-100 text-stone-800 font-medium transition-colors" %>
+      </div>
+    </div>
+  <% end %>
+</div>

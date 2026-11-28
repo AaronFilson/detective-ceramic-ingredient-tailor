@@ -18,4 +18,9 @@ test:
 
 production:
   <<: *default
-  database: <%= ENV.fetch("POSTGRES_DB", "ceramic_platform_production") %>
+<% if ENV["DATABASE_URL"].present? %>
+  url: <%= ENV["DATABASE_URL"].sub(/\Apostgres(?:ql)?:\/\//, "postgis://") %>
+<% else %>
+  database: <%= ENV.fetch("POSTGRES_DB", "dci_tailor_production") %>
+<% end %>
+  max_connections: <%= ENV.fetch("DB_POOL") { [ ENV.fetch("RAILS_MAX_THREADS", 3).to_i + ENV.fetch("JOB_THREADS", 1).to_i + 2, 5 ].max } %>

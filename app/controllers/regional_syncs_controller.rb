@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 class RegionalSyncsController < ApplicationController
+  rate_limit to: 3, within: 30.minutes, only: :create
+
   DEFAULT_RADIUS_KM = 150
   MIN_RADIUS_KM = 25
   MAX_RADIUS_KM = 500
+  TILE_DEDUPE_TTL = 15.minutes
 
   # POST /regional_sync
   def create
@@ -17,6 +20,23 @@ class RegionalSyncsController < ApplicationController
 
     radius_km = parse_radius_km(params[:radius_km])
 
+    if tile_recently_synced?(lat: lat, lng: lng, radius_km: radius_km)
+      setting.update!(
+        regional_sync_status: "synced",
+        regional_synced_at: Time.current,
+        regional_sync_summary: "Regional atlas already synced recently within #{radius_km} km (#{format('%.2f, %.2f', lat, lng)})."
+      )
+      return respond_sync_accepted(
+        setting: setting,
+        lat: lat,
+        lng: lng,
+        radius_km: radius_km,
+        deduped: true
+      )
+    end
+
+    mark_tile_synced!(lat: lat, lng: lng, radius_km: radius_km)
+
     setting.update!(
       regional_sync_status: "queued",
       regional_sync_summary: "Queued regional sync within #{radius_km} km (#{format('%.2f, %.2f', lat, lng)})..."
@@ -28,6 +48,49 @@ class RegionalSyncsController < ApplicationController
       lng: lng,
       radius_km: radius_km
     )
+
+    respond_sync_accepted(
+      setting: setting,
+      lat: lat,
+      lng: lng,
+      radius_km: radius_km,
+      deduped: false
+    )
+  end
+
+  private
+
+  def sync_dedupe_enabled?
+    !Rails.env.test? || ENV["TEST_SYNC_DEDUPE"] == "1"
+  end
+
+  def tile_cache_key(lat:, lng:, radius_km:)
+    "regional_sync:tile:#{(lat * 2).round}:#{(lng * 2).round}:#{radius_km}"
+  end
+
+  def tile_recently_synced?(lat:, lng:, radius_km:)
+    return false unless sync_dedupe_enabled?
+
+    Rails.cache.exist?(tile_cache_key(lat: lat, lng: lng, radius_km: radius_km))
+  end
+
+  def mark_tile_synced!(lat:, lng:, radius_km:)
+    return unless sync_dedupe_enabled?
+
+    Rails.cache.write(
+      tile_cache_key(lat: lat, lng: lng, radius_km: radius_km),
+      Time.current.iso8601,
+      expires_in: TILE_DEDUPE_TTL
+    )
+  end
+
+  def respond_sync_accepted(setting:, lat:, lng:, radius_km:, deduped:)
+    notice_message =
+      if deduped
+        "Regional geochemical atlas already synced recently for this #{radius_km} km area."
+      else
+        "Queued regional geochemical atlas sync (#{radius_km} km radius)."
+      end
 
     respond_to do |format|
       format.turbo_stream do
@@ -42,19 +105,17 @@ class RegionalSyncsController < ApplicationController
         render json: {
           status: setting.regional_sync_status,
           summary: setting.regional_sync_summary,
+          deduped: deduped,
           lat: lat,
           lng: lng,
           radius_km: radius_km
         }, status: :accepted
       end
       format.html do
-        redirect_back fallback_location: setup_path(step: 4),
-          notice: "Queued regional geochemical atlas sync (#{radius_km} km radius)."
+        redirect_back fallback_location: setup_path(step: 4), notice: notice_message
       end
     end
   end
-
-  private
 
   def resolve_coordinate(raw_value, fallback, range)
     return fallback if raw_value.blank?

@@ -17,7 +17,9 @@ services:
 
   web:
     image: ceramic-assay-web:dev
-    build: .
+    build:
+      context: .
+      target: development
     command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails db:prepare tailwindcss:build && bundle exec rails server -b 0.0.0.0 -p 3000"
     volumes:
       - .:/rails
