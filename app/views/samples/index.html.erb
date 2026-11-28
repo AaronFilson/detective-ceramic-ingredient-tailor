@@ -274,6 +274,17 @@
                 lng: @map_lng %>
             <% end %>
 
+            <% if lookup_context.exists?("setup_wizard/regional_sync_card", [], true) %>
+              <%= render "setup_wizard/regional_sync_card",
+                studio_setting: @studio_setting,
+                lat: @map_lat,
+                lng: @map_lng %>
+            <% end %>
+
+            <% if @sample.persisted? %>
+              <%= render "samples/photo_gallery", sample: @sample %>
+            <% end %>
+
             <%= render "samples/sample_form", sample: @sample %>
           </div>
         </article>

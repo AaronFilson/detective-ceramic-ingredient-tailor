@@ -199,4 +199,81 @@ class FieldObservationsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, '<turbo-stream action="replace" target="field_observation_form">'
     assert_includes response.body, "Boiling water absorption percent"
   end
+
+  test "POST /samples/:sample_id/field_observations uploads raw and fired tile photos via Turbo Stream and renders thumbnails" do
+    raw_photo = Rack::Test::UploadedFile.new(
+      StringIO.new(minimal_jpeg_bytes),
+      "image/jpeg",
+      true,
+      original_filename: "raw_tile.jpg"
+    )
+    fired_photo = Rack::Test::UploadedFile.new(
+      StringIO.new(minimal_jpeg_bytes),
+      "image/jpeg",
+      true,
+      original_filename: "fired_tile.jpg"
+    )
+
+    assert_difference -> { @sample.field_observations.count }, 1 do
+      post sample_field_observations_path(@sample, format: :turbo_stream),
+        params: {
+          field_observation: {
+            vinegar_fizz: "slight",
+            fired_cone: "6",
+            fired_color: "Terracotta red",
+            melt_state: "vitrified_tight",
+            raw_tile_photo: raw_photo,
+            fired_tile_photo: fired_photo
+          }
+        }
+    end
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+
+    obs = @sample.latest_field_observation
+    assert obs.raw_tile_photo.attached?
+    assert obs.fired_tile_photo.attached?
+    assert_includes response.body, "data-history-tile-photos=\"#{obs.id}\""
+    assert_includes response.body, "Raw"
+    assert_includes response.body, "Fired"
+
+    get sample_path(@sample)
+    assert_response :success
+    assert_select "#sample_photo_gallery [data-tile-progression-gallery]" do
+      assert_select "[data-tile-observation='#{obs.id}'] img", count: 2
+      assert_includes response.body, "Cone 6"
+      assert_includes response.body, "Terracotta red"
+      assert_includes response.body, "Vitrified tight"
+    end
+  end
+
+  test "POST /samples/:sample_id/field_observations rejects invalid non-image tile photo via Turbo Stream" do
+    bad_file = Rack::Test::UploadedFile.new(
+      StringIO.new("not an image"),
+      "text/plain",
+      false,
+      original_filename: "tile.txt"
+    )
+
+    assert_no_difference -> { @sample.field_observations.count } do
+      post sample_field_observations_path(@sample, format: :turbo_stream),
+        params: {
+          field_observation: {
+            vinegar_fizz: "none",
+            fired_tile_photo: bad_file
+          }
+        }
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, '<turbo-stream action="replace" target="field_observation_form">'
+    assert_includes response.body, "must be a JPEG, PNG, or WebP image"
+  end
+
+  private
+
+  def minimal_jpeg_bytes
+    "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9".b
+  end
 end
