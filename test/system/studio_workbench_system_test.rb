@@ -58,6 +58,8 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
 
     assert_text "DCI Tailor"
     assert_selector "#setup_wizard_modal"
+    assert_selector "#regional_sync_card", count: 1
+    assert_selector "#wizard_regional_sync_card", count: 1, visible: :all
     assert_text "Welcome to DCI Tailor"
 
     within "#setup_wizard_modal" do
@@ -113,10 +115,18 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
 
           # Step 2: Log vigorous vinegar fizz + raw & fired test-tile photos
           within "#field_observation_form" do
-            choose "field_observation_vinegar_fizz_vigorous", allow_label_click: true
+            if js_driver?
+              find("label", text: "Vigorous").click
+            else
+              choose "field_observation_vinegar_fizz_vigorous"
+            end
             select "Cone 6 (1222 °C — Mid-Fire Stoneware)", from: "Fired Cone"
             fill_in "Fired Color", with: "Terracotta red"
-            choose "field_observation_melt_state_vitrified_tight", allow_label_click: true
+            if js_driver?
+              find("label", text: "Vitrified / Tight").click
+            else
+              choose "field_observation_melt_state_vitrified_tight"
+            end
             attach_file "Raw Test-Tile Photo", raw_tile_path
             attach_file "Fired Test-Tile Photo", fired_tile_path
             click_button "Apply Observations & Recalculate Assay"
@@ -139,7 +149,13 @@ class StudioWorkbenchSystemTest < ApplicationSystemTestCase
             assert_selector "[data-history-tile-photos] img", count: 2
           end
 
-          # Reload full workbench page to verify Step 1 photo gallery shows both outcrop + raw/fired progression
+          # Verify Step 1 photo gallery updated live via Turbo Stream before any full page reload
+          within "#sample_photo_gallery" do
+            assert_selector "[data-outcrop-photo-grid] img", count: 1
+            assert_selector "[data-tile-progression-gallery] img", count: 2
+          end
+
+          # Reload full workbench page to verify Step 1 photo gallery persists both outcrop + raw/fired progression
           visit sample_path(sample)
           within "#sample_photo_gallery" do
             assert_selector "[data-outcrop-photo-grid] img", count: 1

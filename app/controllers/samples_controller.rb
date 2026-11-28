@@ -112,9 +112,15 @@ class SamplesController < ApplicationController
     explicit_new_unit = submitted_unit_id.present? && submitted_unit_id != prev_unit_id
     assign_geologic_unit_if_needed!(@sample, force: coords_changed && !explicit_new_unit)
     assign_cached_soil_profile_if_needed!(@sample, force: coords_changed)
-    @sample.outcrop_photos.attach(new_photos) if new_photos.any?
 
-    if @sample.save
+    saved = false
+    UserSample.transaction do
+      @sample.outcrop_photos.attach(new_photos) if new_photos.any?
+      saved = @sample.save
+      raise ActiveRecord::Rollback unless saved
+    end
+
+    if saved
       enqueue_soil_profile_lookup_if_needed(@sample)
       enqueue_mineral_occurrence_lookup_if_needed(@sample)
       @assay_result = self.class.estimate_sample(@sample, field_observation: @sample.latest_field_observation)

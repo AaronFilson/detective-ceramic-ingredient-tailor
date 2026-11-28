@@ -147,8 +147,11 @@ class Media::ExifGpsExtractorTest < ActiveSupport::TestCase
     assert_nil Media::ExifGpsExtractor.extract(nil)
   end
 
-  test "rejects out-of-range GPS coordinates cleanly" do
+  test "rejects out-of-range and Null-Island (0.0, 0.0) GPS coordinates cleanly" do
     bad_jpeg = build_jpeg_with_gps(lat: 95.5, lng: -122.4, endian: :little)
+    null_island_jpeg = build_jpeg_with_gps(lat: 0.0, lng: 0.0, endian: :little)
+
     assert_nil Media::ExifGpsExtractor.extract(bad_jpeg)
+    assert_nil Media::ExifGpsExtractor.extract(null_island_jpeg)
   end
 end

@@ -119,6 +119,11 @@ jobs:
       - name: Install packages
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libgeos-dev libproj-dev libvips
 
+      - name: Set up Chrome and ChromeDriver
+        uses: browser-actions/setup-chrome@v1
+        with:
+          install-chromedriver: true
+
       - name: Checkout code
         uses: actions/checkout@v6
 
@@ -135,7 +140,7 @@ jobs:
           POSTGRES_PORT: "5432"
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        run: bin/rails db:create db:test:prepare test:system
+        run: bin/rails tailwindcss:build db:create db:test:prepare test:system
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4

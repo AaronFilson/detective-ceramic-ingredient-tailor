@@ -234,6 +234,8 @@ class FieldObservationsControllerTest < ActionDispatch::IntegrationTest
     obs = @sample.latest_field_observation
     assert obs.raw_tile_photo.attached?
     assert obs.fired_tile_photo.attached?
+    assert_includes response.body, '<turbo-stream action="replace" target="sample_photo_gallery">'
+    assert_includes response.body, "data-tile-observation=\"#{obs.id}\""
     assert_includes response.body, "data-history-tile-photos=\"#{obs.id}\""
     assert_includes response.body, "Raw"
     assert_includes response.body, "Fired"

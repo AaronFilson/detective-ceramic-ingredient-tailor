@@ -10,8 +10,9 @@
     end
 %>
 
-<% if outcrop_photos.any? || tile_observations.any? %>
-  <div id="sample_photo_gallery" data-photo-gallery class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-4">
+<div id="sample_photo_gallery">
+  <% if outcrop_photos.any? || tile_observations.any? %>
+    <div data-photo-gallery class="rounded-xl border border-[#D6C7B2] bg-[#FAF7F2] p-4 space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h3 class="text-xs font-bold uppercase tracking-wider text-stone-700">
@@ -118,5 +119,6 @@
         </div>
       </div>
     <% end %>
-  </div>
-<% end %>
+    </div>
+  <% end %>
+</div>

@@ -305,6 +305,16 @@ class BlendsControllerTest < ActionDispatch::IntegrationTest
     assert_includes gv_body.dig("recipes", 0, "notes"), "Predicted COE:"
   end
 
+  test "export endpoints fall back to StudioSetting cone and surface defaults when omitted" do
+    StudioSetting.current.update!(default_fired_cone: "10", default_blend_surface: "matte")
+
+    get export_glazecalc_blends_path, params: { sample_ids: [ @clay.id, @ash.id ] }
+    assert_response :success
+    gc_body = JSON.parse(response.body)
+    assert_equal "high", gc_body.dig("records", "recipes", 0, "firing")
+    assert_includes gc_body.dig("records", "recipes", 0, "title"), "Cone 10 Matte"
+  end
+
   test "export endpoints return 422 JSON when sample selection is invalid" do
     get export_glazecalc_blends_path, params: { sample_ids: [ @clay.id ] }
     assert_response :unprocessable_content

@@ -31,15 +31,11 @@ class RegionalSyncsController < ApplicationController
 
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: turbo_stream.replace(
-          "regional_sync_card",
-          partial: "setup_wizard/regional_sync_card",
-          locals: {
-            studio_setting: setting,
-            lat: lat,
-            lng: lng,
-            radius_km: radius_km
-          }
+        render turbo_stream: regional_sync_turbo_streams(
+          studio_setting: setting,
+          lat: lat,
+          lng: lng,
+          radius_km: radius_km
         )
       end
       format.json do
@@ -87,17 +83,23 @@ class RegionalSyncsController < ApplicationController
     error_message = "Valid latitude (-90..90) and longitude (-180..180) are required to sync regional data."
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: turbo_stream.replace(
-          "regional_sync_card",
-          partial: "setup_wizard/regional_sync_card",
-          locals: {
-            studio_setting: setting,
-            sync_error: error_message
-          }
+        render turbo_stream: regional_sync_turbo_streams(
+          studio_setting: setting,
+          sync_error: error_message
         ), status: :unprocessable_entity
       end
       format.json { render json: { error: error_message }, status: :unprocessable_entity }
       format.html { redirect_back fallback_location: setup_path(step: 4), alert: error_message }
+    end
+  end
+
+  def regional_sync_turbo_streams(**locals)
+    %w[regional_sync_card wizard_regional_sync_card].map do |card_id|
+      turbo_stream.replace(
+        card_id,
+        partial: "setup_wizard/regional_sync_card",
+        locals: locals.merge(dom_id: card_id)
+      )
     end
   end
 end

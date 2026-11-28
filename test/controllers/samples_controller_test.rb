@@ -749,15 +749,36 @@ class SamplesControllerTest < ActionDispatch::IntegrationTest
       original_filename: "bad.txt"
     )
 
-    patch sample_path(sample), params: {
-      user_sample: {
-        title: "Protected Photo Sample",
-        outcrop_photos: [ bad_file ]
+    assert_no_difference [ "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ] do
+      patch sample_path(sample), params: {
+        user_sample: {
+          title: "Protected Photo Sample",
+          outcrop_photos: [ bad_file ]
+        }
       }
-    }
+    end
 
     assert_response :unprocessable_entity
     assert_includes response.body, "must be a JPEG, PNG, or WebP image"
+    assert_equal [ "valid_outcrop.jpg" ], sample.reload.outcrop_photos.map { |p| p.filename.to_s }
+
+    valid_new_photo = Rack::Test::UploadedFile.new(
+      StringIO.new(minimal_jpeg_bytes),
+      "image/jpeg",
+      true,
+      original_filename: "rolled_back.jpg"
+    )
+
+    assert_no_difference [ "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ] do
+      patch sample_path(sample), params: {
+        user_sample: {
+          title: "",
+          outcrop_photos: [ valid_new_photo ]
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
     assert_equal [ "valid_outcrop.jpg" ], sample.reload.outcrop_photos.map { |p| p.filename.to_s }
   end
 

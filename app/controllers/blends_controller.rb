@@ -150,8 +150,8 @@ class BlendsController < ApplicationController
     ids = parse_sample_ids(extract_param(:sample_ids))
     stock_keys = parse_stock_keys(extract_param(:stock_keys))
     selected = resolve_selected_materials(ids, stock_keys)
-    cone = extract_param(:target_cone).presence || "6"
-    surface = extract_param(:surface).presence || "gloss"
+    cone = extract_param(:target_cone).presence || current_studio_setting.blend_target_cone
+    surface = extract_param(:surface).presence || current_studio_setting.default_blend_surface
     recipe_title = extract_param(:recipe_title).to_s.strip.presence
 
     blend_result = Chemistry::BlendRecipeBuilder.call(

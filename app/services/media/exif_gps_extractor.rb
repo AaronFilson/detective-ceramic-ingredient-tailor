@@ -247,6 +247,7 @@ module Media
       lng = lng.abs if lng_ref == "E"
 
       return nil if lat.nan? || lat.infinite? || lng.nan? || lng.infinite?
+      return nil if lat.zero? && lng.zero?
       return nil unless lat.between?(-90.0, 90.0) && lng.between?(-180.0, 180.0)
 
       { latitude: lat.round(6), longitude: lng.round(6) }

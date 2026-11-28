@@ -9,3 +9,7 @@
 <%= turbo_stream.replace "field_observation_history" do %>
   <%= render "field_observations/history", sample: @sample %>
 <% end %>
+
+<%= turbo_stream.replace "sample_photo_gallery" do %>
+  <%= render "samples/photo_gallery", sample: @sample %>
+<% end %>

@@ -25,6 +25,7 @@ class RegionalSyncsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "text/vnd.turbo-stream.html", response.media_type
     assert_includes response.body, '<turbo-stream action="replace" target="regional_sync_card">'
+    assert_includes response.body, '<turbo-stream action="replace" target="wizard_regional_sync_card">'
     assert_includes response.body, 'data-regional-sync-status="queued"'
     assert_includes response.body, "Queued"
     assert_includes response.body, "Hydrate Regional Atlas"
